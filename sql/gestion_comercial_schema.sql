@@ -137,25 +137,34 @@ COMMENT ON TABLE Dim_Geografia IS 'Catálogo único de ubicaciones geográficas 
 
 
 -- Tabla Maestro_Clientes
--- Contiene UNA fila por cada PUNTO DE VENTA o SUCURSAL de cliente real.
--- Esta es la tabla que contiene la clasificación de negocio UNIFICADA.
+-- Contiene UNA fila por cada PUNTO DE VENTA, con la información que NUNCA cambia.
 DROP TABLE IF EXISTS Maestro_Clientes CASCADE;
 CREATE TABLE Maestro_Clientes (
     id_maestro_cliente SERIAL PRIMARY KEY,
-    cod_cliente_maestro VARCHAR(50) UNIQUE NOT NULL, -- El código MAESTRO que TÚ defines para unificar un punto de venta.
-    nombre_unificado VARCHAR(255) NOT NULL,    -- El nombre comercial principal que TÚ defines para este punto de venta.
-    
-    -- Tus clasificaciones de negocio ahora viven aquí:
+    cod_cliente_maestro VARCHAR(50) UNIQUE NOT NULL,
+    nombre_unificado VARCHAR(255) NOT NULL
+);
+COMMENT ON TABLE Maestro_Clientes IS 'Catálogo maestro con una entrada única por punto de venta/sucursal real.';
+
+-- ¡NUEVA TABLA! Dim_Clientes_Clasificacion_Historia (SCD Tipo 2)
+-- Almacena el historial de clasificaciones para cada cliente maestro.
+DROP TABLE IF EXISTS Dim_Clientes_Clasificacion_Historia CASCADE;
+CREATE TABLE Dim_Clientes_Clasificacion_Historia (
+    id_clasificacion_historia SERIAL PRIMARY KEY,
+    id_maestro_cliente_fk INT NOT NULL REFERENCES Maestro_Clientes(id_maestro_cliente),
+
+    -- Tus clasificaciones de negocio que pueden cambiar con el tiempo:
     canal VARCHAR(100),
     subcanal VARCHAR(100),
     sucursal VARCHAR(55),
     dia_visita VARCHAR(50),
-    
-    -- Llave Foránea a la dimensión geográfica.
-    id_geografia_fk INT REFERENCES Dim_Geografia(id_geografia)
-);
-COMMENT ON TABLE Maestro_Clientes IS 'Catálogo maestro con una entrada única por punto de venta/sucursal de cliente. Contiene la clasificación de negocio unificada.';
+    id_geografia_fk INT REFERENCES Dim_Geografia(id_geografia),
 
+    -- Columnas para manejar el historial
+    fecha_inicio_validez DATE NOT NULL,
+    fecha_fin_validez DATE NOT NULL
+);
+COMMENT ON TABLE Dim_Clientes_Clasificacion_Historia IS 'Tabla histórica (SCD Tipo 2) que registra las clasificaciones de un cliente a lo largo del tiempo.';
 
 -- Tabla Dim_Clientes_Empresa
 -- Contiene los registros de clientes tal como aparecen en la API para cada empresa.
@@ -183,3 +192,51 @@ CREATE TABLE Dim_Clientes_Empresa (
     CONSTRAINT uq_cliente_por_empresa UNIQUE (cod_cliente_erp, empresa_erp)
 );
 COMMENT ON TABLE Dim_Clientes_Empresa IS 'Registros de clientes por empresa, tal como vienen del ERP. Se enlazan a un único cliente maestro.';
+
+-- =================================================================
+-- SECCIÓN 3: DIMENSIONES DE VENDEDORES (Versión 2 - Con SCD Tipo 2 para Historial)
+-- =================================================================
+
+-- Tabla Maestro_Personas
+-- Contiene UNA fila por cada persona física (vendedores, supervisores, etc.).
+-- Esta es la fuente de verdad para los datos de una persona.
+DROP TABLE IF EXISTS Maestro_Personas CASCADE;
+CREATE TABLE Maestro_Personas (
+    id_persona SERIAL PRIMARY KEY,
+    numero_documento VARCHAR(50) UNIQUE NOT NULL, -- La llave de negocio que identifica a una persona única.
+    nombre_completo VARCHAR(255) NOT NULL
+);
+COMMENT ON TABLE Maestro_Personas IS 'Catálogo maestro con una entrada única por persona física. Contiene datos que no cambian con el tiempo.';
+
+
+-- Tabla Dim_Vendedores_Historia (Dimensión de Lenta Variación Tipo 2)
+-- Cada fila representa un "contrato" o un periodo en el que una persona ocupó un rol de venta.
+-- Renombrada para ser más genérica y con la nueva columna 'cargo'
+DROP TABLE IF EXISTS Dim_Roles_Comerciales_Historia CASCADE;
+CREATE TABLE Dim_Roles_Comerciales_Historia (
+    id_rol_historia SERIAL PRIMARY KEY,
+    cod_rol_erp VARCHAR(50) NOT NULL, -- Código del rol/puesto (ej. 'V01', 'SUPTATP1')
+    empresa_erp VARCHAR(50) NOT NULL,
+    cargo VARCHAR(100),               -- ¡NUEVA COLUMNA! Ej: 'Supervisor TAT P1', 'Vendedor Tiendas'
+    
+    id_persona_fk INT NOT NULL REFERENCES Maestro_Personas(id_persona),
+    id_supervisor_fk INT REFERENCES Maestro_Personas(id_persona), 
+    
+    fecha_inicio_validez DATE NOT NULL,
+    fecha_fin_validez DATE NOT NULL,
+    
+    CONSTRAINT uq_rol_periodo UNIQUE (cod_rol_erp, empresa_erp, fecha_inicio_validez)
+);
+COMMENT ON TABLE Dim_Roles_Comerciales_Historia IS 'Tabla histórica (SCD Tipo 2) que registra qué persona ocupó un rol/cargo comercial y durante qué periodo.';
+
+
+-- Tabla Dim_Portafolio
+-- Mapea un ROL de venta con las LÍNEAS de producto que está autorizado a vender.
+DROP TABLE IF EXISTS Dim_Portafolio CASCADE;
+CREATE TABLE Dim_Portafolio (
+    -- La llave primaria es la combinación de ambas columnas.
+    cod_vendedor_erp VARCHAR(50) NOT NULL,
+    id_linea_fk INT NOT NULL REFERENCES Dim_Lineas(id_linea),
+    PRIMARY KEY (cod_vendedor_erp, id_linea_fk)
+);
+COMMENT ON TABLE Dim_Portafolio IS 'Mapea los roles de venta con las líneas de producto que componen su portafolio.';

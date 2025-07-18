@@ -126,18 +126,19 @@ CREATE TABLE Gestion_Productos_Aux (
 );
 
 
+-----
 
-Sección 2: Dimensiones de Cliente y Geografía
+### **Sección 2: Dimensiones de Cliente y Geografía (Versión 3 - Con Historial)**
 
-Este diseño utiliza un modelo de Cliente Maestro para resolver el desafío de tener un mismo cliente (punto de venta) con diferentes códigos en tus empresas, permitiendo una clasificación unificada.
+Este diseño implementa un modelo de **Cliente Maestro** junto con una **Dimensión de Lenta Variación (SCD) Tipo 2** para la clasificación de clientes. Esto resuelve el desafío de que un mismo cliente cambie de clasificación (ej. de "Tienda" a "Minimercado") a lo largo del tiempo, permitiendo un análisis histórico preciso.
 
-2.1. Dimensión Geográfica
+-----
 
-Propósito: Centralizar todas las ubicaciones en un catálogo único para evitar redundancia y facilitar el análisis geográfico.
+#### **2.1. Dimensión Geográfica**
 
-SQL
+**Propósito:** Centralizar todas las ubicaciones en un catálogo único para evitar redundancia y facilitar el análisis geográfico.
 
-
+```sql
 -- Catálogo único de ubicaciones geográficas (barrio, ciudad, departamento).
 CREATE TABLE Dim_Geografia (
     id_geografia SERIAL PRIMARY KEY,
@@ -146,27 +147,39 @@ CREATE TABLE Dim_Geografia (
     departamento VARCHAR(100),
     CONSTRAINT uq_geografia UNIQUE (barrio, ciudad, departamento)
 );
+```
 
+-----
 
+#### **2.2. Modelo de Cliente Maestro y su Historial**
 
+**Propósito:** Separar la identidad permanente de un cliente de sus atributos que cambian con el tiempo.
 
-2.2. Modelo de Cliente Maestro
+  * **`Maestro_Clientes`**: Contiene una única ficha por cada punto de venta real, con la información que nunca cambia.
+  * **`Dim_Clientes_Clasificacion_Historia`**: Almacena el historial de clasificaciones (canal, subcanal, etc.) para cada cliente, indicando el periodo de validez de cada una.
+  * **`Dim_Clientes_Empresa`**: Sigue siendo el registro de los clientes tal como vienen de la API para cada empresa, pero ahora se enlaza al cliente maestro.
 
-Propósito: Crear una única "ficha" por cada punto de venta real. Esta ficha contiene la clasificación de negocio unificada que se aplicará a ese cliente, sin importar en cuántas de tus empresas esté registrado.
+<!-- end list -->
 
-SQL
-
-
--- Catálogo maestro con una entrada única por punto de venta/sucursal de cliente.
+```sql
+-- Catálogo maestro con una entrada única por punto de venta/sucursal real.
 CREATE TABLE Maestro_Clientes (
     id_maestro_cliente SERIAL PRIMARY KEY,
-    cod_cliente_maestro VARCHAR(50) UNIQUE NOT NULL, -- El código MAESTRO que unifica un punto de venta.
-    nombre_unificado VARCHAR(255) NOT NULL,    -- El nombre comercial principal que tú defines.
+    cod_cliente_maestro VARCHAR(50) UNIQUE NOT NULL,
+    nombre_unificado VARCHAR(255) NOT NULL
+);
+
+-- Tabla histórica (SCD Tipo 2) que registra las clasificaciones de un cliente a lo largo del tiempo.
+CREATE TABLE Dim_Clientes_Clasificacion_Historia (
+    id_clasificacion_historia SERIAL PRIMARY KEY,
+    id_maestro_cliente_fk INT NOT NULL REFERENCES Maestro_Clientes(id_maestro_cliente),
     canal VARCHAR(100),
     subcanal VARCHAR(100),
     sucursal VARCHAR(55),
     dia_visita VARCHAR(50),
-    id_geografia_fk INT REFERENCES Dim_Geografia(id_geografia)
+    id_geografia_fk INT REFERENCES Dim_Geografia(id_geografia),
+    fecha_inicio_validez DATE NOT NULL,
+    fecha_fin_validez DATE NOT NULL
 );
 
 -- Registros de clientes por empresa, tal como vienen del ERP. Se enlazan a un único cliente maestro.
@@ -184,3 +197,63 @@ CREATE TABLE Dim_Clientes_Empresa (
     inactivo_erp VARCHAR(10),
     CONSTRAINT uq_cliente_por_empresa UNIQUE (cod_cliente_erp, empresa_erp)
 );
+```
+
+-----
+
+### **Sección 3: Dimensión de Vendedores y Jerarquía**
+
+Este diseño utiliza un modelo de **Dimensión de Lenta Variación (SCD) Tipo 2** para gestionar al personal comercial. Separa la identidad de la **persona** de los **roles o cargos** que ocupa a lo largo del tiempo. Esto permite una trazabilidad completa para liquidaciones de comisiones y análisis de jerarquías, incluso con alta rotación de personal.
+
+-----
+
+#### **3.1. Maestro de Personas**
+
+**Propósito:** Almacenar una ficha única por cada persona física (vendedores, supervisores, etc.), identificada por su número de documento. Contiene la información que no cambia.
+
+```sql
+-- Catálogo maestro con una entrada única por persona física.
+CREATE TABLE Maestro_Personas (
+    id_persona SERIAL PRIMARY KEY,
+    numero_documento VARCHAR(50) UNIQUE NOT NULL,
+    nombre_completo VARCHAR(255) NOT NULL
+);
+```
+
+-----
+
+#### **3.2. Historial de Roles Comerciales**
+
+**Propósito:** Registrar los "contratos" o periodos en los que una persona ocupó un rol o cargo específico (ej. "Vendedor TAT", "Supervisor TAT P1"), a quién le reportaba y durante qué fechas.
+
+```sql
+-- Tabla histórica (SCD Tipo 2) que registra qué persona ocupó un rol/cargo comercial y durante qué periodo.
+CREATE TABLE Dim_Roles_Comerciales_Historia (
+    id_rol_historia SERIAL PRIMARY KEY,
+    cod_rol_erp VARCHAR(50) NOT NULL,           -- Código del rol/puesto (ej. 'V01', 'SUPTATP1')
+    empresa_erp VARCHAR(50) NOT NULL,
+    cargo VARCHAR(100),                         -- El nombre del cargo gestionado (ej: 'Supervisor TAT P1')
+    id_persona_fk INT NOT NULL REFERENCES Maestro_Personas(id_persona),
+    id_supervisor_fk INT REFERENCES Maestro_Personas(id_persona), -- Enlace a la PERSONA que es su supervisor.
+    fecha_inicio_validez DATE NOT NULL,
+    fecha_fin_validez DATE NOT NULL,
+    CONSTRAINT uq_rol_periodo UNIQUE (cod_rol_erp, empresa_erp, fecha_inicio_validez)
+);
+```
+
+-----
+
+#### **3.3. Portafolio de Venta**
+
+**Propósito:** Mapear los roles de venta (identificados por su `cod_rol_erp`) con las líneas de producto que están autorizados a vender, permitiendo la validación de ventas.
+
+```sql
+-- Mapea los roles de venta con las líneas de producto que componen su portafolio.
+CREATE TABLE Dim_Portafolio (
+    cod_rol_erp VARCHAR(50) NOT NULL,
+    id_linea_fk INT NOT NULL REFERENCES Dim_Lineas(id_linea),
+    PRIMARY KEY (cod_rol_erp, id_linea_fk)
+);
+```
+
+-----
