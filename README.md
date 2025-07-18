@@ -1,24 +1,27 @@
 # proyectos_gestion_comercial
 Suite de scripts de Python y modelos de datos para la inteligencia de negocio y automatización del área comercial.
 
-Modelo de Datos: gestion_comercial
+-----
 
-Este documento detalla la arquitectura de las tablas de dimensiones para la base de datos centralizada. El diseño sigue un modelo de Esquema en Estrella, separando las Dimensiones (que describen las entidades de negocio) de las futuras Tablas de Hechos (que registran las transacciones).
+## **Modelo de Datos: `gestion_comercial`**
 
-Sección 1: Dimensiones de Producto
+Este documento detalla la arquitectura de las tablas de dimensiones para la base de datos centralizada. El diseño sigue un modelo de **Esquema en Estrella**, separando las **Dimensiones** (que describen las entidades de negocio) de las futuras **Tablas de Hechos** (que registran las transacciones).
+
+### **Sección 1: Dimensiones de Producto**
 
 El diseño separa los datos en tres tipos de tablas:
-Catálogos (Dim_...): Tablas pequeñas que contienen listas únicas de atributos como líneas, marcas, etc.
-Maestra de API (Dim_Productos): Contiene los datos "crudos" de los productos tal como existen en el sistema origen (API de TNS) para cada empresa.
-Gestión y Reglas de Negocio (Gestion_... y Acuerdos_...): Tablas que almacenan las clasificaciones, reglas y atributos que tú gestionas manualmente para enriquecer los datos crudos.
 
-1.1. Tablas de Catálogo
+1.  **Catálogos (`Dim_...`):** Tablas pequeñas que contienen listas únicas de atributos como líneas, marcas, etc.
+2.  **Maestra de API (`Dim_Productos`):** Contiene los datos "crudos" de los productos tal como existen en el sistema origen (API de TNS) para cada empresa.
+3.  **Gestión y Reglas de Negocio (`Gestion_...` y `Acuerdos_...`):** Tablas que almacenan las clasificaciones, reglas y atributos que tú gestionas manualmente para enriquecer los datos crudos.
 
-Propósito: Almacenar listas únicas de atributos para evitar redundancia y asegurar la consistencia.
+-----
 
-SQL
+#### **1.1. Tablas de Catálogo**
 
+**Propósito:** Almacenar listas únicas de atributos para evitar redundancia y asegurar la consistencia.
 
+```sql
 -- Catálogo único de Líneas/Proveedores.
 CREATE TABLE Dim_Lineas (
     id_linea SERIAL PRIMARY KEY,
@@ -46,17 +49,15 @@ CREATE TABLE Dim_Grupos (
     cod_grupo_articulo VARCHAR(50) UNIQUE,
     nombre_grupo_articulo VARCHAR(100)
 );
+```
 
+\<br\>
 
+#### **1.2. Tabla Maestra de Productos (API)**
 
+**Propósito:** Servir como la "fuente de verdad" de los productos tal como existen en el sistema origen para cada una de tus empresas.
 
-1.2. Tabla Maestra de Productos (API)
-
-Propósito: Servir como la "fuente de verdad" de los productos tal como existen en el sistema origen para cada una de tus empresas.
-
-SQL
-
-
+```sql
 -- Tabla maestra de productos tal como existen en el ERP para cada empresa.
 CREATE TABLE Dim_Productos (
     id_producto SERIAL PRIMARY KEY,
@@ -74,17 +75,15 @@ CREATE TABLE Dim_Productos (
     costo_ult_erp MONEY,
     CONSTRAINT uq_producto_empresa UNIQUE (codigo_erp, referencia, empresa_erp)
 );
+```
 
+\<br\>
 
+#### **1.3. Tablas de Gestión y Reglas de Negocio**
 
+**Propósito:** Almacenar las clasificaciones, reglas de convenios y atributos de negocio que tú gestionas. Este sistema es flexible y permite que las reglas cambien con el tiempo.
 
-1.3. Tablas de Gestión y Reglas de Negocio
-
-Propósito: Almacenar las clasificaciones, reglas de convenios y atributos de negocio que tú gestionas. Este sistema es flexible y permite que las reglas cambien con el tiempo.
-
-SQL
-
-
+```sql
 -- Define las versiones de los acuerdos comerciales y su periodo de vigencia.
 CREATE TABLE Acuerdos_Comerciales (
     id_acuerdo SERIAL PRIMARY KEY,
@@ -124,8 +123,7 @@ CREATE TABLE Gestion_Productos_Aux (
     activo_compra BOOLEAN DEFAULT TRUE,
     id_marca_fk INT REFERENCES Dim_Marcas(id_marca)
 );
-
-
+```
 -----
 
 ### **Sección 2: Dimensiones de Cliente y Geografía (Versión 3 - Con Historial)**
