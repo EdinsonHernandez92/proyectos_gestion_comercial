@@ -255,3 +255,132 @@ CREATE TABLE Dim_Portafolio (
 ```
 
 -----
+## **Sección 4: Tabla de Hechos de Ventas**
+
+La tabla de hechos es el corazón del almacén de datos. Registra cada evento de negocio (en este caso, cada línea de venta) y conecta todas las dimensiones que hemos creado. Este diseño está optimizado tanto para el rendimiento de las consultas como para la facilidad de análisis ad-hoc.
+
+### **4.1. `Hechos_Ventas`**
+
+**Propósito:** Almacenar una fila por cada línea de detalle de una factura o devolución. Contiene las llaves foráneas a todas las dimensiones relevantes y las medidas numéricas del negocio.
+
+```sql
+-- Tabla de hechos central que registra cada línea de venta.
+CREATE TABLE Hechos_Ventas (
+    -- Llave primaria de la tabla de hechos
+    id_venta BIGSERIAL PRIMARY KEY,
+
+    -- --- Claves Foráneas (FK) a las Dimensiones ---
+    -- Se usan para los JOINS grandes y el rendimiento.
+    fecha_sk DATE NOT NULL REFERENCES Dim_Tiempo(fecha_sk),
+    id_producto_fk INT NOT NULL REFERENCES Dim_Productos(id_producto),
+    id_cliente_empresa_fk INT NOT NULL REFERENCES Dim_Clientes_Empresa(id_cliente_empresa),
+    id_rol_historia_fk INT NOT NULL REFERENCES Dim_Roles_Comerciales_Historia(id_rol_historia),
+
+    -- --- Llaves de Negocio (Business Keys) ---
+    -- Incluidas a propósito para facilitar el filtrado y análisis directo.
+    codigo_producto_erp VARCHAR(30),
+    cod_cliente_erp VARCHAR(50),
+    cod_rol_erp VARCHAR(50),
+    empresa_erp VARCHAR(50),
+
+    -- --- Medidas Numéricas (Los Hechos) ---
+    cantidad NUMERIC(18, 4) NOT NULL,
+    valor_base NUMERIC(18, 4) NOT NULL,
+    valor_descuento NUMERIC(18, 4) DEFAULT 0,
+    valor_iva NUMERIC(18, 4) DEFAULT 0,
+    valor_total NUMERIC(18, 4) NOT NULL,
+    costo_total NUMERIC(18, 4),
+    precio_lista NUMERIC(18, 4),
+    
+    -- --- Atributos Degenerados (Contexto adicional) ---
+    id_transaccion_erp BIGINT,
+    numero_factura_erp VARCHAR(50) NOT NULL,
+    forma_pago_erp VARCHAR(10),
+    bodega_erp VARCHAR(20),
+    lista_precio_erp VARCHAR(20),
+    observaciones_erp VARCHAR(255),
+    motivo_devolucion_erp VARCHAR(255)
+);
+```
+
+## **Sección 5: Dimensión de Tiempo**
+
+**Propósito:** Crear un catálogo de fechas con atributos pre-calculados para facilitar el análisis temporal (por mes, trimestre, día hábil, etc.) sin necesidad de hacer cálculos de fecha en cada consulta.
+
+```sql
+-- Dimensión de calendario para análisis de tiempo. Una fila por cada día.
+CREATE TABLE Dim_Tiempo (
+    fecha_sk DATE PRIMARY KEY,
+    fecha_completa DATE NOT NULL,
+    anio INT NOT NULL,
+    mes_del_anio INT NOT NULL,
+    nombre_mes VARCHAR(20) NOT NULL,
+    trimestre_del_anio INT NOT NULL,
+    bimestre_del_anio INT NOT NULL,
+    semana_del_anio INT NOT NULL,
+    dia_del_mes INT NOT NULL,
+    nombre_dia VARCHAR(20) NOT NULL,
+    es_fin_de_semana BOOLEAN NOT NULL,
+    es_dia_habil BOOLEAN NOT NULL,
+    dia_habil_del_mes INT,
+    total_dias_habiles_mes INT
+);
+```
+
+## **Sección 6: Módulo de Reglas de Comisiones**
+
+**Propósito:** Este conjunto de tablas forma un "motor de reglas" flexible para almacenar la compleja lógica de negocio de la liquidación de comisiones. El diseño permite que las reglas cambien con el tiempo y se adapten a diferentes roles y contextos sin necesidad de modificar el código principal.
+
+```sql
+-- Define un "paquete" de liquidación, a quién aplica y su factor base.
+CREATE TABLE Reglas_Comision_Conjunto (
+    id_conjunto SERIAL PRIMARY KEY,
+    nombre_conjunto VARCHAR(255) NOT NULL,
+    rol VARCHAR(100),
+    canal VARCHAR(100),
+    portafolio VARCHAR(100),
+    empresa_erp VARCHAR(50),
+    factor_comisional_base NUMERIC(18, 2),
+    es_factor_variable BOOLEAN DEFAULT FALSE,
+    periodo DATE NOT NULL,
+    CONSTRAINT uq_conjunto UNIQUE (rol, canal, portafolio, empresa_erp, periodo)
+);
+
+-- Tabla jerárquica para almacenar cada item de una regla (indicadores y sub-indicadores).
+CREATE TABLE Reglas_Comision_Item (
+    id_item_regla SERIAL PRIMARY KEY,
+    id_conjunto_fk INT NOT NULL REFERENCES Reglas_Comision_Conjunto(id_conjunto),
+    id_item_padre_fk INT REFERENCES Reglas_Comision_Item(id_item_regla), -- Enlace a sí misma para crear la jerarquía.
+    nombre_item VARCHAR(255) NOT NULL,
+    peso_sobre_padre NUMERIC(5, 4) NOT NULL,
+    linea_aplicacion VARCHAR(255),
+    min_cumplimiento NUMERIC(5, 4),
+    max_cumplimiento NUMERIC(5, 4),
+    tipo_calculo VARCHAR(100) NOT NULL, -- Define qué función de Python se debe ejecutar.
+    parametros_json JSONB, -- Almacena parámetros específicos para cada regla.
+    observacion TEXT
+);
+
+-- Almacena las metas asignadas a cada vendedor para cada indicador en un periodo específico.
+CREATE TABLE Metas_Asignadas (
+    id_meta_asignada SERIAL PRIMARY KEY,
+    id_item_regla_fk INT NOT NULL REFERENCES Reglas_Comision_Item(id_item_regla),
+    id_rol_historia_fk INT NOT NULL REFERENCES Dim_Roles_Comerciales_Historia(id_rol_historia),
+    valor_meta NUMERIC(18, 2) NOT NULL,
+    periodo DATE NOT NULL,
+    CONSTRAINT uq_meta_por_rol_item_periodo UNIQUE (id_item_regla_fk, id_rol_historia_fk, periodo)
+);
+
+-- Almacena los resultados calculados de la liquidación para cada vendedor por periodo.
+CREATE TABLE Resultados_Liquidacion_Comision (
+    id_resultado SERIAL PRIMARY KEY,
+    id_rol_historia_fk INT NOT NULL REFERENCES Dim_Roles_Comerciales_Historia(id_rol_historia),
+    id_conjunto_fk INT NOT NULL REFERENCES Reglas_Comision_Conjunto(id_conjunto),
+    id_indicador_fk INT NOT NULL REFERENCES Reglas_Comision_Item(id_item_regla),
+    valor_logrado NUMERIC(18, 4),
+    porcentaje_cumplimiento NUMERIC(7, 4),
+    porcentaje_liquidacion_final NUMERIC(7, 4)
+);
+```
+
+-----
