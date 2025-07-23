@@ -240,3 +240,172 @@ CREATE TABLE Dim_Portafolio (
     PRIMARY KEY (cod_vendedor_erp, id_linea_fk)
 );
 COMMENT ON TABLE Dim_Portafolio IS 'Mapea los roles de venta con las líneas de producto que componen su portafolio.';
+
+-- =================================================================
+-- SECCIÓN 4: TABLA DE HECHOS DE VENTAS (Versión Final)
+-- =================================================================
+
+DROP TABLE IF EXISTS Hechos_Ventas CASCADE;
+CREATE TABLE Hechos_Ventas (
+    -- Llave primaria de la tabla de hechos
+    id_venta BIGSERIAL PRIMARY KEY, -- Usamos BIGSERIAL por si tienes miles de millones de filas a futuro.
+
+    -- --- Claves Foráneas (FK) a las Dimensiones ---
+    -- Se usan para los JOINS grandes y el rendimiento.
+    fecha_sk DATE NOT NULL REFERENCES Dim_Tiempo(fecha_sk),
+    id_producto_fk INT NOT NULL REFERENCES Dim_Productos(id_producto),
+    id_cliente_empresa_fk INT NOT NULL REFERENCES Dim_Clientes_Empresa(id_cliente_empresa),
+    id_rol_historia_fk INT NOT NULL REFERENCES Dim_Roles_Comerciales_Historia(id_rol_historia),
+
+    -- --- Llaves de Negocio (Business Keys) ---
+    -- Redundantes a propósito para facilitar el filtrado y análisis ad-hoc, como tú lo pediste.
+    codigo_producto_erp VARCHAR(30),
+    cod_cliente_erp VARCHAR(50),
+    cod_rol_erp VARCHAR(50),
+    empresa_erp VARCHAR(50),
+
+    -- --- Medidas Numéricas (Los Hechos) ---
+    cantidad NUMERIC(18, 4) NOT NULL,
+    valor_base NUMERIC(18, 4) NOT NULL,
+    valor_descuento NUMERIC(18, 4) DEFAULT 0,
+    valor_iva NUMERIC(18, 4) DEFAULT 0,
+    valor_total NUMERIC(18, 4) NOT NULL,
+    costo_total NUMERIC(18, 4),
+    precio_lista NUMERIC(18, 4),
+    
+    -- --- Atributos Degenerados (Contexto adicional de la transacción) ---
+    id_transaccion_erp BIGINT, -- Tu 'id_erp'
+    numero_factura_erp VARCHAR(50) NOT NULL,
+    forma_pago_erp VARCHAR(10),
+    bodega_erp VARCHAR(20),
+    lista_precio_erp VARCHAR(20),
+    observaciones_erp VARCHAR(255),
+    motivo_devolucion_erp VARCHAR(255)
+);
+
+COMMENT ON TABLE Hechos_Ventas IS 'Tabla de hechos central que registra cada línea de venta. Conecta todas las dimensiones y contiene las medidas de negocio.';
+
+-- =================================================================
+-- SECCIÓN 5: DIMENSIÓN DE TIEMPO
+-- =================================================================
+
+DROP TABLE IF EXISTS Dim_Tiempo CASCADE;
+CREATE TABLE Dim_Tiempo (
+    fecha_sk DATE PRIMARY KEY, -- Usamos la fecha misma como llave primaria (Surrogate Key).
+    fecha_completa DATE NOT NULL,
+    anio INT NOT NULL,
+    mes_del_anio INT NOT NULL,
+    nombre_mes VARCHAR(20) NOT NULL,
+    trimestre_del_anio INT NOT NULL,
+    bimestre_del_anio INT NOT NULL,
+    semana_del_anio INT NOT NULL,
+    dia_del_mes INT NOT NULL,
+    nombre_dia VARCHAR(20) NOT NULL,
+    es_fin_de_semana BOOLEAN NOT NULL,
+    es_dia_habil BOOLEAN NOT NULL,
+    dia_habil_del_mes INT,
+    total_dias_habiles_mes INT
+);
+
+COMMENT ON TABLE Dim_Tiempo IS 'Dimensión de calendario para análisis de tiempo. Una fila por cada día.';
+
+-- =================================================================
+-- SECCIÓN 6: MÓDULO DE REGLAS DE COMISIONES (Versión 3 - Jerárquica)
+-- =================================================================
+
+-- Tabla Reglas_Comision_Conjunto
+-- Define el "paquete" de liquidación para un rol/grupo en un periodo.
+DROP TABLE IF EXISTS Reglas_Comision_Conjunto CASCADE;
+CREATE TABLE Reglas_Comision_Conjunto (
+    id_conjunto SERIAL PRIMARY KEY,
+    nombre_conjunto VARCHAR(255) NOT NULL, -- Ej: "Liquidación Vendedor V01 - 2024-04"
+    
+    -- El contexto que define a quién aplica este conjunto de reglas
+    rol VARCHAR(100),
+    canal VARCHAR(100),
+    portafolio VARCHAR(100),
+    empresa_erp VARCHAR(50),
+    
+    -- El factor comisional base (puede ser nulo si es variable)
+    factor_comisional_base NUMERIC(18, 2),
+    es_factor_variable BOOLEAN DEFAULT FALSE,
+    
+    -- Periodo de validez
+    periodo DATE NOT NULL,
+    
+    CONSTRAINT uq_conjunto UNIQUE (rol, canal, portafolio, empresa_erp, periodo)
+);
+COMMENT ON TABLE Reglas_Comision_Conjunto IS 'Define un "paquete" de liquidación, a quién aplica y su factor base.';
+
+
+-- Tabla Reglas_Comision_Item (Nuestra nueva tabla central jerárquica)
+-- Cada fila es una regla, ya sea un indicador principal, un sub-indicador o un detalle.
+DROP TABLE IF EXISTS Reglas_Comision_Item CASCADE;
+CREATE TABLE Reglas_Comision_Item (
+    id_item_regla SERIAL PRIMARY KEY,
+    id_conjunto_fk INT NOT NULL REFERENCES Reglas_Comision_Conjunto(id_conjunto),
+    
+    -- Enlace para la jerarquía. Si es un indicador principal, este campo es NULO.
+    id_item_padre_fk INT REFERENCES Reglas_Comision_Item(id_item_regla),
+
+    -- Descripción de la regla/item
+    nombre_item VARCHAR(255) NOT NULL, -- Ej: "Profundidad", "PRO PLAN GATOS SECO", "Volumen Ventas"
+    
+    -- Pesos
+    peso_sobre_padre NUMERIC(5, 4) NOT NULL, -- El peso de este item DENTRO de su padre. Para indicadores principales, es el peso sobre el total.
+                                             -- Corresponde a tu `peso_indicador` o `peso_sub_indicador`.
+    
+    -- Ámbito de aplicación
+    linea_aplicacion VARCHAR(255), -- La `linea` de tu tabla (ej: 'LA SOBERANA', 'TOTAL')
+    
+    -- Umbrales de cumplimiento
+    min_cumplimiento NUMERIC(5, 4),
+    max_cumplimiento NUMERIC(5, 4),
+
+    -- Cómo se debe calcular este item
+    -- Ej: 'SUMA_VALOR_BASE', 'CONTEO_IMPACTOS_CLIENTE', 'PROMEDIO_PONDERADO_HIJOS'
+    tipo_calculo VARCHAR(100) NOT NULL,
+    
+    -- Parámetros adicionales para el cálculo
+    -- Ej: para 'Impactos', podría ser una lista de SKUs. Para 'Profundidad Soberana', el peso de cada sub-indicador.
+    parametros_json JSONB,
+    
+    -- Notas y dependencias
+    observacion TEXT
+);
+COMMENT ON TABLE Reglas_Comision_Item IS 'Tabla jerárquica para almacenar cada item de una regla de comisión (indicadores y sub-indicadores).';
+
+
+-- Tabla para almacenar los objetivos o metas asignados a cada rol/vendedor.
+-- Esta tabla se poblará desde la hoja de cálculo de Google Sheets.
+DROP TABLE IF EXISTS Metas_Asignadas CASCADE;
+CREATE TABLE Metas_Asignadas (
+    id_meta_asignada SERIAL PRIMARY KEY,
+
+    -- Enlace al item de regla para el cual se está asignando la meta.
+    id_item_regla_fk INT NOT NULL REFERENCES Reglas_Comision_Item(id_item_regla),
+    
+    -- Enlace al rol/vendedor y periodo histórico al que se le asigna la meta.
+    id_rol_historia_fk INT NOT NULL REFERENCES Dim_Roles_Comerciales_Historia(id_rol_historia),
+    
+    -- El valor del objetivo
+    valor_meta NUMERIC(18, 2) NOT NULL,
+    
+    -- Periodo al que corresponde esta meta
+    periodo DATE NOT NULL,
+
+    CONSTRAINT uq_meta_por_rol_item_periodo UNIQUE (id_item_regla_fk, id_rol_historia_fk, periodo)
+);
+
+COMMENT ON TABLE Metas_Asignadas IS 'Almacena las metas u objetivos asignados a cada vendedor para cada indicador en un periodo específico. Poblada desde un proceso externo (ej. Google Sheets).';
+
+-- 4. Tabla para almacenar los resultados finales de las liquidaciones.
+CREATE TABLE Resultados_Liquidacion_Comision (
+    id_resultado SERIAL PRIMARY KEY,
+    id_rol_historia_fk INT NOT NULL REFERENCES Dim_Roles_Comerciales_Historia(id_rol_historia),
+    id_conjunto_fk INT NOT NULL REFERENCES Reglas_Comision_Conjunto(id_conjunto),
+    id_indicador_fk INT NOT NULL REFERENCES Reglas_Comision_Item(id_item_regla),
+    valor_logrado NUMERIC(18, 4),
+    porcentaje_cumplimiento NUMERIC(7, 4),
+    porcentaje_liquidacion_final NUMERIC(7, 4)
+);
