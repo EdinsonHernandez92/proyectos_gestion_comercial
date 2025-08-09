@@ -5,11 +5,12 @@ import requests
 import os
 import sys
 import json
+from io import StringIO
 
 # Añadimos la ruta raíz del proyecto para poder importar nuestros módulos
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import config
-from db_utils import get_db_connection
+from db_utils import get_db_connection, execute_query
 
 def leer_mapeos():
     """
@@ -32,7 +33,8 @@ def leer_mapeos():
         # Mapeo de marcas (nombre de marca + empresa -> código unificado)
         df_marcas = pd.read_csv(os.path.join(base_path, 'mapeo_marcas.csv'), dtype=str)
         # Creamos una llave compuesta para el diccionario: "nombre|empresa"
-        df_marcas['llave_compuesta'] = df_marcas['nombre_marca_erp'] + '|' + df_marcas['empresa_erp']
+        #df_marcas['llave_compuesta'] = df_marcas['nombre_marca_erp'] + '|' + df_marcas['empresa_erp']        
+        df_marcas['llave_compuesta'] = df_marcas['nombre_marca_erp'] + ',' + df_marcas['empresa_erp']
         mapa_marcas = df_marcas.set_index('llave_compuesta')['cod_marca_unificado'].to_dict()
 
         mapeos = {
@@ -154,6 +156,13 @@ def transformar_productos(df_crudo, mapeos):
     
     df =df_crudo.copy()
 
+    # Reemplazamos los valores nulos (NaN) en columnas de texto clave por un string vacío ''
+    # ANTES de cualquier otra transformación para evitar errores.
+    columnas_de_texto_a_limpiar = ['codigo_erp', 'referencia', 'descripcion_erp', 'nombre_marca_erp']
+    for col in columnas_de_texto_a_limpiar:
+        if col in df.columns:
+            df[col] = df[col].fillna('')
+
     # --- Aplicar mapeos simples (basados solo en 'codigo_erp') ---
     print("INFO: Aplicando correcciones para Líneas, Grupos y Departamentos...")
     df['cod_linea_erp_limpio'] = df['codigo_erp'].map(mapeos['lineas']).fillna(df['cod_linea_erp'])
@@ -163,7 +172,8 @@ def transformar_productos(df_crudo, mapeos):
     # --- Aplicar mapeo de marcas (basado en 'nombre_marca_erp' y 'empresa_epr') ---
     print("\nINFO: Aplicando correcciones para Marcas...")
     def mapear_marca(row):
-        llave = f"{row['nombre_marca_erp']}|{row['empresa_erp']}"
+        #llave = f"{row['nombre_marca_erp']}|{row['empresa_erp']}"
+        llave = f"{row['nombre_marca_erp']},{row['empresa_erp']}"
         return mapeos['marcas'].get(llave, None) # Si no hay mapeo, devuelve None (o un valor por defecto)
     
     df['cod_marca_limpio'] = df.apply(mapear_marca, axis=1)
@@ -172,33 +182,93 @@ def transformar_productos(df_crudo, mapeos):
     return df
 
 def cargar_productos_db(df_limpio, conn):
-    print("INFO: (Pendiente) Cargando productos en la base de datos...")
+    """
+    Carga el DataFrame limpio en la tabla dim_productos usando una tabla de staging.
+    """
+    print("\nINFO: Iniciando carga de productos en la base de datos...")
+    if df_limpio is None:
+        print("ERROR: No hay datos limpios para cargar.")
+        return
+    
+    staging_table = "staging_dim_productos"
 
+    try:
+        # 1. Crear tabla de Staging
+        execute_query(conn, f"CREATE TEMP TABLE {staging_table} (LIKE dim_productos INCLUDING DEFAULTS);")
+        print(f"INFO: Tabla de staging '{staging_table}' creada.")
+
+        # 2. Preparar y cargar datos a la tabla de Staging usando COPY
+        buffer =StringIO()
+        # Sleccionamos solo las columnas que existen en dim_productos
+        columnas_db = [
+            'codigo_erp', 'referencia', 'empresa_erp','descripcion_erp', 'cod_grupo_erp',
+            'cod_linea_erp', 'cod_dpto_sku_erp', 'peso_bruto_erp', 'factor_erp',
+            'porcentaje_iva', 'costo_promedio_erp', 'costo_ult_erp'
+        ]
+        # Renombrar columnas del df para que coincidan con la tabla
+        df_para_carga = df_limpio.rename(columns={
+            'cod_grupo_limpio': 'cod_grupo_erp',
+            'cod_linea_limpio': 'cod_linea_erp', 
+            'cod_dpto_limpio': 'cod_dpto_sku_erp'
+        })
+
+        df_para_carga[columnas_db].to_csv(buffer, index=False, header=False, sep=',')
+        buffer.seek(0)
+
+        with conn.cursor() as cursor:
+            cursor.copy_expert(f"COPY {staging_table} ({','.join(columnas_db)}) FROM STDIN WITH (FORMAT CSV, DELIMITER ',')", buffer)
+        print(f"INFO: {len(df_limpio)} registros cargados a la tabla de staging.")
+
+        # 3. Hacer "Merge" (UPSERT) desde Staging a la tabla final
+        merge_sql = """
+            INSERT INTO dim_productos (codigo_erp, referencia, empresa_erp, descripcion_erp, cod_grupo_erp, cod_linea_erp, cod_dpto_sku_erp, peso_bruto_erp, factor_erp, porcentaje_iva, costo_ult_erp, costo_promedio_erp)
+            SELECT codigo_erp, referencia, empresa_erp, descripcion_erp, cod_grupo_erp, cod_linea_erp, cod_dpto_sku_erp, peso_bruto_erp, factor_erp, porcentaje_iva, costo_ult_erp, costo_promedio_erp
+            FROM staging_dim_productos
+            ON CONFLICT (codigo_erp, referencia, empresa_erp) DO UPDATE SET
+                descripcion_erp = EXCLUDED.descripcion_erp,
+                cod_grupo_erp = EXCLUDED.cod_grupo_erp,
+                cod_linea_erp = EXCLUDED.cod_linea_erp,
+                cod_dpto_sku_erp = EXCLUDED.cod_dpto_sku_erp,
+                costo_promedio_erp = EXCLUDED.costo_promedio_erp,
+                costo_ult_erp = EXCLUDED.costo_ult_erp;
+        """
+        execute_query(conn, merge_sql)
+        print("¡ÉXITO! La tabla 'dim_productos' ha sido actualizada (INSERT/UPDATE).")
+
+        # 4. (Opcional) Poblar gestion_productos_aux. Por ahora solo creamos los registros.
+        populate_gestion_sql = """
+            INSERT INTO gestion_productos_aux (id_productos_fk)
+            SELECT id_producto FROM dim_productos dp
+            WHERE NOT EXISTS (
+                SELECT 1 FROM gestion_productos_aux gp WHERE gp.id_producto_fk = dp.id_producto
+            );
+        """
+        execute_query(conn, populate_gestion_sql)
+        print("INFO: La tabla 'gestion_productos_aux' ha sido actualizada con los nuevos productos.")
+
+    except Exception as e:
+        print(f"ERROR CRÍTICO durante la carga a la base de datos: {e}")
+    finally:
+        # La tabla de staging temporal se elimina automáticamente al cerrar la conexión
+        print("INFO: Carga de productos completada.")
 
 if __name__ == '__main__':
     print("=== INICIO DEL PROCESO ETL DE PRODUCTOS ===")
     
-    mapeos_cargados = leer_mapeos()
+    mapeos = leer_mapeos()
 
     # El procesos solo continúa si los mapeos se cargaron correctamente
-    if mapeos_cargados:
-        df_productos_crudo = extraer_productos_api()
+    if mapeos:
+        df_crudo = extraer_productos_api()
+        if df_crudo is not None:
+            df_limpio = transformar_productos(df_crudo, mapeos)
 
-        if df_productos_crudo is not None:
-            df_productos_limpio = transformar_productos(df_productos_crudo, mapeos_cargados)
-
-            print("\n--- Vista previa de los datos transformados (primeras 5 filas) ---")
-            # Mostramos las columnas crudas y las limpias para comparar
-            columnas_a_mostrar = [
-                'codigo_erp', 'empresa_erp',
-                'cod_linea_erp', 'cod_linea_erp',
-                'nombre_marca_erp', 'cod_marca_limpio'
-            ]
-            print(df_productos_limpio[columnas_a_mostrar].head(10))
-
-            # conn = get_db_connection()
-            # if conn:
-            #   cargar_productos_db(df_productos_limpio, conn)
-            #   conn.close()
+            conn = get_db_connection()
+            if conn:
+                try:
+                    cargar_productos_db(df_limpio, conn)
+                finally:
+                    conn.close()
+                    print("\nINFO: Conexión a la base de datos cerrada.")
         
     print("\n=== FIN DEL PROCESO ETL DE PRODUCTOS ===")
