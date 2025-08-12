@@ -5,6 +5,7 @@ import requests
 import os
 import sys
 from io import StringIO
+from psycopg2 import extras
 
 # Añadimos la ruta raíz del proyecto para poder importar nuestros módulos
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -157,54 +158,55 @@ def transformar_productos(df_crudo, mapeos):
     return df
 
 def cargar_productos_db(df_limpio, conn):
-    """Carga el DataFrame limpio en la tabla dim_productos."""
+    """
+    Carga el DataFrame limpio en la tabla dim_productos de forma masiva y segura.
+    Utiliza INSERT ... ON CONFLICT para insertar nuevos y actualizar existentes.
+    """
     print("\nINFO: Iniciando carga de productos en la base de datos...")
-    if df_limpio is None: return
+    if df_limpio is None or df_limpio.empty:
+        print("ADVERTENCIA: No hay datos limpios para cargar.")
+        return
 
-    staging_table = "staging_dim_productos"
-    
-    try:
-        # Estas son las columnas de tu tabla 'dim_productos'
-        columnas_db = [
-            'codigo_erp', 'referencia', 'empresa_erp', 'descripcion_erp',
-            'cod_grupo_erp', 'cod_linea_erp', 'cod_dpto_sku_erp',
-            'peso_bruto_erp', 'factor_erp', 'porcentaje_iva', 'costo_promedio_erp','costo_ult_erp' 
-        ]
-        df_para_carga = df_limpio[columnas_db]
+    with conn.cursor() as cursor:
+        try:
+            # Columnas en el orden exacto de la tabla dim_productos
+            columnas_db = [
+                'codigo_erp', 'referencia', 'empresa_erp', 'descripcion_erp', 'cod_grupo_erp', 
+                'cod_linea_erp', 'cod_dpto_sku_erp', 'peso_bruto_erp', 'factor_erp', 
+                'porcentaje_iva', 'costo_ult_erp', 'costo_promedio_erp'
+            ]
+            
+            # Columnas que se deben actualizar si el producto ya existe
+            columnas_update = [
+                'descripcion_erp', 'cod_grupo_erp', 'cod_linea_erp', 'cod_dpto_sku_erp',
+                'costo_ult_erp', 'costo_promedio_erp'
+            ]
+            
+            # Preparamos el string para la sección SET del UPDATE
+            update_sql = ", ".join([f'"{col}" = EXCLUDED."{col}"' for col in columnas_update])
+            
+            # Creamos la consulta SQL final (UPSERT)
+            query = f"""
+                INSERT INTO dim_productos ({", ".join(f'"{col}"' for col in columnas_db)})
+                VALUES %s
+                ON CONFLICT (codigo_erp, referencia, empresa_erp) DO UPDATE SET
+                    {update_sql};
+            """
 
-        # Crear tabla de Staging
-        execute_query(conn, f'CREATE TEMP TABLE "{staging_table}" (LIKE dim_productos INCLUDING DEFAULTS);')
+            # Convertimos el DataFrame a una lista de tuplas para la inserción
+            df_para_carga = df_limpio[columnas_db]
+            datos_para_insertar = [tuple(row) for row in df_para_carga.itertuples(index=False)]
 
-        # Cargar datos a Staging usando COPY
-        buffer = StringIO()
-        df_para_carga.to_csv(buffer, index=False, header=False, sep=',')
-        buffer.seek(0)
-        
-        with conn.cursor() as cursor:
-            # Usamos comillas dobles para el nombre de la tabla por seguridad
-            cursor.copy_expert(f'COPY "{staging_table}" ({",".join(columnas_db)}) FROM STDIN WITH (FORMAT CSV, DELIMITER \',\')', buffer)
-        
-        # Merge (UPSERT) desde Staging a la tabla final
-        merge_sql = f"""
-            INSERT INTO dim_productos ({",".join(columnas_db)})
-            SELECT {",".join(columnas_db)}
-            FROM "{staging_table}"
-            ON CONFLICT (codigo_erp, referencia, empresa_erp) DO UPDATE SET
-                descripcion_erp = EXCLUDED.descripcion_erp,
-                cod_grupo_erp = EXCLUDED.cod_grupo_erp,
-                cod_linea_erp = EXCLUDED.cod_linea_erp,
-                cod_dpto_sku_erp = EXCLUDED.cod_dpto_sku_erp,
-                costo_promedio_erp = EXCLUDED.costo_promedio_erp,
-                costo_ult_erp = EXCLUDED.costo_ult_erp;
-        """
-        execute_query(conn, merge_sql)
+            print(f"INFO: Realizando UPSERT (INSERT/UPDATE) de {len(datos_para_insertar)} registros en 'dim_productos'...")
+            extras.execute_values(cursor, query, datos_para_insertar, page_size=1000)
+            
+            # No olvides hacer commit para guardar los cambios
+            conn.commit()
+            print("¡ÉXITO! La tabla 'dim_productos' ha sido actualizada.")
 
-        print("¡ÉXITO! Tabla 'dim_productos' actualizada.")
-
-    except Exception as e:
-        print(f"ERROR CRÍTICO durante la carga a la base de datos: {e}")
-    finally:
-        print("INFO: Carga de productos completada.")
+        except Exception as e:
+            print(f"ERROR CRÍTICO durante la carga a la base de datos: {e}")
+            conn.rollback() # Revertimos la transacción en caso de error
 
 if __name__ == '__main__':
     print("=== INICIO DEL PROCESO ETL DE PRODUCTOS ===")
