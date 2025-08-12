@@ -45,17 +45,17 @@ DROP TABLE IF EXISTS Dim_Productos CASCADE;
 CREATE TABLE Dim_Productos (
     id_producto SERIAL PRIMARY KEY,
     codigo_erp VARCHAR(30) NOT NULL,
-    referencia VARCHAR(30) NOT NULL,
+    referencia VARCHAR(30),
     empresa_erp VARCHAR(50) NOT NULL,
     descripcion_erp VARCHAR(255),
     cod_grupo_erp VARCHAR(50),
     cod_linea_erp VARCHAR(50),
     cod_dpto_sku_erp VARCHAR(50),
     peso_bruto_erp NUMERIC(10, 4),
-    factor_erp INT,
+    factor_erp NUMERIC(10, 3),
     porcentaje_iva NUMERIC,
-    costo_promedio_erp MONEY,
-    costo_ult_erp MONEY,
+    costo_promedio_erp NUMERIC(18,6),
+    costo_ult_erp NUMERIC(18,6),
     CONSTRAINT uq_producto_empresa UNIQUE (codigo_erp, referencia, empresa_erp)
 );
 COMMENT ON TABLE Dim_Productos IS 'Tabla maestra de productos tal como existen en el ERP para cada empresa.';
