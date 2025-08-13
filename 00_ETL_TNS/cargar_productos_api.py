@@ -173,13 +173,13 @@ def cargar_productos_db(df_limpio, conn):
             columnas_db = [
                 'codigo_erp', 'referencia', 'empresa_erp', 'descripcion_erp', 'cod_grupo_erp', 
                 'cod_linea_erp', 'cod_dpto_sku_erp', 'peso_bruto_erp', 'factor_erp', 
-                'porcentaje_iva', 'costo_ult_erp', 'costo_promedio_erp'
+                'porcentaje_iva', 'costo_promedio_erp', 'costo_ult_erp'
             ]
             
             # Columnas que se deben actualizar si el producto ya existe
             columnas_update = [
                 'descripcion_erp', 'cod_grupo_erp', 'cod_linea_erp', 'cod_dpto_sku_erp',
-                'costo_ult_erp', 'costo_promedio_erp'
+                'costo_promedio_erp', 'costo_ult_erp'
             ]
             
             # Preparamos el string para la sección SET del UPDATE
