@@ -60,6 +60,39 @@ CREATE TABLE Dim_Productos (
 );
 COMMENT ON TABLE Dim_Productos IS 'Tabla maestra de productos tal como existen en el ERP para cada empresa.';
 
+CREATE TABLE Dim_Bodegas (
+    id_bodega SERIAL PRIMARY KEY,
+    cod_bodega_erp VARCHAR(50) UNIQUE NOT NULL,
+    nombre_bodega VARCHAR(100)
+);
+
+COMMENT ON TABLE Dim_Bodegas IS 'Catálogo único de las bodegas físicas o virtuales.';
+
+CREATE TABLE Inventario_Actual (
+    id_producto_fk INT NOT NULL REFERENCES dim_productos(id_producto),
+    id_bodega_fk INT NOT NULL REFERENCES Dim_Bodegas(id_bodega),
+    empresa_erp VARCHAR(50) NOT NULL,
+    cantidad_disponible NUMERIC(18, 4) NOT NULL,
+    fecha_ultima_actualizacion TIMESTAMP WITH TIME ZONE NOT NULL,
+    -- La llave primaria asegura una sola fila por producto, bodega y empresa
+    PRIMARY KEY (id_producto_fk, id_bodega_fk, empresa_erp)
+);
+
+COMMENT ON TABLE Inventario_Actual IS 'Almacena el estado actual y más reciente del inventario por producto, bodega y empresa.';
+
+CREATE TABLE Hechos_Inventario (
+    id_inventario BIGSERIAL PRIMARY KEY,
+    fecha_snapshot DATE NOT NULL,
+    id_producto_fk INT NOT NULL REFERENCES dim_productos(id_producto),
+    id_bodega_fk INT NOT NULL REFERENCES Dim_Bodegas(id_bodega),
+    empresa_erp VARCHAR(50) NOT NULL,
+    cantidad_disponible NUMERIC(18, 4) NOT NULL,
+    -- La restricción de unicidad asegura una sola "foto" por día, producto, bodega y empresa
+    CONSTRAINT uq_inventario_snapshot UNIQUE (fecha_snapshot, id_producto_fk, id_bodega_fk, empresa_erp)
+);
+
+COMMENT ON TABLE Hechos_Inventario IS 'Tabla de hechos histórica para almacenar snapshots del inventario en momentos específicos.';
+
 -- Sistema para gestionar convenios y acuerdos comerciales
 -- (Este sistema se mantiene exactamente igual)
 DROP TABLE IF EXISTS Acuerdos_Comerciales CASCADE;
