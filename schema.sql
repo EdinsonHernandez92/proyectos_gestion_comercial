@@ -30,6 +30,14 @@ CREATE TABLE Dim_Grupos (
 );
 COMMENT ON TABLE Dim_Grupos IS 'Catálogo de Grupos de Artículos según el ERP.';
 
+CREATE TABLE Dim_Bodegas (
+    id_bodega SERIAL PRIMARY KEY,
+    cod_bodega_erp VARCHAR(50) UNIQUE NOT NULL,
+    nombre_bodega VARCHAR(100)
+);
+
+COMMENT ON TABLE Dim_Bodegas IS 'Catálogo único de las bodegas físicas o virtuales.';
+
 DROP TABLE IF EXISTS Dim_Geografia CASCADE;
 CREATE TABLE Dim_Geografia (
     id_geografia SERIAL PRIMARY KEY,
@@ -86,6 +94,31 @@ CREATE TABLE Dim_Productos (
     CONSTRAINT uq_producto_empresa UNIQUE (codigo_erp, referencia, empresa_erp)
 );
 COMMENT ON TABLE Dim_Productos IS 'Tabla maestra de productos tal como existen en el ERP para cada empresa.';
+
+CREATE TABLE Inventario_Actual (
+    id_producto_fk INT NOT NULL REFERENCES dim_productos(id_producto),
+    id_bodega_fk INT NOT NULL REFERENCES Dim_Bodegas(id_bodega),
+    empresa_erp VARCHAR(50) NOT NULL,
+    cantidad_disponible NUMERIC(18, 4) NOT NULL,
+    fecha_ultima_actualizacion TIMESTAMP WITH TIME ZONE NOT NULL,
+    -- La llave primaria asegura una sola fila por producto, bodega y empresa
+    PRIMARY KEY (id_producto_fk, id_bodega_fk, empresa_erp)
+);
+
+COMMENT ON TABLE Inventario_Actual IS 'Almacena el estado actual y más reciente del inventario por producto, bodega y empresa.';
+
+CREATE TABLE Hechos_Inventario (
+    id_inventario BIGSERIAL PRIMARY KEY,
+    fecha_snapshot DATE NOT NULL,
+    id_producto_fk INT NOT NULL REFERENCES dim_productos(id_producto),
+    id_bodega_fk INT NOT NULL REFERENCES Dim_Bodegas(id_bodega),
+    empresa_erp VARCHAR(50) NOT NULL,
+    cantidad_disponible NUMERIC(18, 4) NOT NULL,
+    -- La restricción de unicidad asegura una sola "foto" por día, producto, bodega y empresa
+    CONSTRAINT uq_inventario_snapshot UNIQUE (fecha_snapshot, id_producto_fk, id_bodega_fk, empresa_erp)
+);
+
+COMMENT ON TABLE Hechos_Inventario IS 'Tabla de hechos histórica para almacenar snapshots del inventario en momentos específicos.';
 
 DROP TABLE IF EXISTS Maestro_Clientes CASCADE;
 CREATE TABLE Maestro_Clientes (
@@ -267,8 +300,8 @@ CREATE TABLE Gestion_Productos_Aux (
     clasificacion_py VARCHAR(100),
     equivalencia_py VARCHAR(50),
     peso_neto NUMERIC(10, 4),
-    grupo_tq VARCHAR(100),
-    activo_compra BOOLEAN DEFAULT TRUE,
+    --grupo_tq VARCHAR(100), Se crea un módulo dedicado para tq
+    --activo_compra BOOLEAN DEFAULT TRUE, Se crea una tabla dedicada
 
     -- COLUMNAS sr_tat, sr_mm, sr_ssm ELIMINADAS.
     -- Esta lógica ahora se gestiona a través del sistema de Acuerdos_Comerciales
@@ -318,3 +351,45 @@ CREATE TABLE Hechos_Ventas (
 );
 
 COMMENT ON TABLE Hechos_Ventas IS 'Tabla de hechos central que registra cada línea de venta. Conecta todas las dimensiones y contiene las medidas de negocio.';
+
+CREATE TABLE Dim_Producto_Estado_Historia (
+    id_estado_historia SERIAL PRIMARY KEY,
+    id_producto_fk INT NOT NULL REFERENCES dim_productos(id_producto),
+    estado VARCHAR(50) NOT NULL, -- Ej: 'Activo para Compra', 'Descontinuado', 'Suspendido'
+    fecha_inicio_validez DATE NOT NULL,
+    fecha_fin_validez DATE NOT NULL,
+    observacion TEXT -- Para añadir notas como "Descontinuado por proveedor"
+);
+
+COMMENT ON TABLE Dim_Producto_Estado_Historia IS 'Tabla histórica (SCD Tipo 2) que registra el ciclo de vida y estado de compra de un producto.';
+
+CREATE TABLE Dim_TQ_Negocios (
+    id_negocio_tq SERIAL PRIMARY KEY,
+    cod_negocio_tq VARCHAR(50) UNIQUE NOT NULL, -- Ej: '018'
+    nombre_negocio_tq VARCHAR(100) NOT NULL   -- Ej: 'Respiratorio'
+);
+
+COMMENT ON TABLE Dim_TQ_Negocios IS 'Catálogo maestro de los "Negocios" de Tecnoquímicas.';
+
+CREATE TABLE Dim_TQ_Categorias (
+    id_categoria_tq SERIAL PRIMARY KEY,
+    id_negocio_tq_fk INT NOT NULL REFERENCES Dim_TQ_Negocios(id_negocio_tq), -- Enlace al padre
+    cod_categoria_tq VARCHAR(50) UNIQUE NOT NULL, -- Ej: '183'
+    nombre_categoria_tq VARCHAR(100) NOT NULL   -- Ej: 'Noraver Garganta'
+);
+
+COMMENT ON TABLE Dim_TQ_Categorias IS 'Catálogo de las "Categorías" de Tecnoquímicas, enlazadas a un Negocio.';
+
+CREATE TABLE Map_Producto_TQ_Categoria (
+    id_map_tq SERIAL PRIMARY KEY,
+    id_producto_fk INT NOT NULL REFERENCES dim_productos(id_producto),
+    id_categoria_tq_fk INT NOT NULL REFERENCES Dim_TQ_Categorias(id_categoria_tq),
+    
+    -- Columnas para el seguimiento histórico
+    fecha_inicio_validez DATE NOT NULL,
+    fecha_fin_validez DATE NOT NULL,
+
+    CONSTRAINT uq_producto_tq_periodo UNIQUE (id_producto_fk, fecha_inicio_validez)
+);
+
+COMMENT ON TABLE Map_Producto_TQ_Categoria IS 'Tabla histórica que mapea un producto a su categoría TQ para un periodo de tiempo.';
