@@ -148,8 +148,14 @@ def transformar_productos(df_crudo, mapeos):
         if col in df.columns:
             df[col] = df[col].fillna('')
     
+    # Si la 'referencia' está vacía, la reemplazamos con el 'codigo_erp'
+    # La condición df['referencia'] == '' encuentra todas las filas donde la referencia es un string vacío.
+    df.loc[df['referencia'] == '', 'referencia'] = df['codigo_erp']
+    print("INFO: Aplicada la regla de negocio para referencias vacías.")
+    # ------------------------------------------------
+
     # Aplicamos las correcciones, SOBREESCRIBIENDO las columnas originales
-        print("INFO: Aplicando correcciones de mapeo...")
+    print("INFO: Aplicando correcciones de mapeo...")
     df['cod_linea_erp'] = df['codigo_erp'].map(mapeos['lineas']).fillna(df['cod_linea_erp'])
     df['cod_grupo_erp'] = df['codigo_erp'].map(mapeos['grupos']).fillna(df['cod_grupo_erp'])
     df['cod_dpto_sku_erp'] = df['codigo_erp'].map(mapeos['dptos']).fillna(df['cod_dpto_sku_erp'])
