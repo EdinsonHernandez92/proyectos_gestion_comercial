@@ -94,6 +94,13 @@ def poblar_catalogos():
         dtypes_grupos = {"cod_grupo_articulo": str} # Le decimos a Pandas que lea el código como texto
         cargar_csv_a_tabla(ruta_grupos, 'Dim_Grupos', mapeo_grupos, "cod_grupo_articulo", conn, dtypes=dtypes_grupos)
 
+        # --- Cargar Dim Bodegas ---
+        print("\n--- Iniciando carga de Dim_Bodegas ---")
+        ruta_bodegas = os.path.join(base_path, 'dim_bodegas.csv')
+        mapeo_bodegas = {"cod_bodega_erp": "cod_bodega_erp", "nombre_bodega":"nombre_bodega"}
+        dtypes_bodegas = {"cod_bodega_erp": str}
+        cargar_csv_a_tabla(ruta_bodegas, 'Dim_Bodegas',mapeo_bodegas,"cod_bodega_erp",conn, dtypes=dtypes_bodegas)
+
     finally:
         if conn:
             conn.close()
