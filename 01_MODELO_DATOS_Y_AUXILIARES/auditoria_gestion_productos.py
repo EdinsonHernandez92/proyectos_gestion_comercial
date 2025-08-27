@@ -10,8 +10,8 @@ from db_utils import get_db_connection
 
 def auditar_productos_sin_gestion():
     """
-    Compara dim_productos con gestion_productos_aux y genera un CSV con los
-    productos que faltan por clasificar.
+    Compara los productos con actividad reciente (ventas o inventario) con
+    gestion_productos_aux y genera un CSV con los pendientes por clasificar.
     """
     print("=== INICIO DE LA AUDITORÍA DE PRODUCTOS SIN GESTIÓN ===")
     
@@ -20,76 +20,65 @@ def auditar_productos_sin_gestion():
         return
 
     try:
-        # --- PASO 1: Obtener todos los productos únicos de la tabla maestra ---
-        # Como la clasificación es global, solo necesitamos una instancia de cada (codigo_erp, referencia)
-        query_todos = """
-            SELECT DISTINCT codigo_erp, referencia, descripcion_erp
-            FROM dim_productos;
-        """
-        df_todos = pd.read_sql_query(query_todos, conn)
-        print(f"INFO: Se encontraron {len(df_todos)} productos únicos en 'dim_productos'.")
+        # --- PASO 1: Obtener productos con actividad reciente (Ventas O Inventario) ---
+        # Los intervalos ('12 months', '3 months') son ajustables.
+        print("INFO: Buscando productos con actividad reciente (ventas o inventario)...")
+        query_activos = """
+            -- Productos con ventas en los últimos 12 meses
+            SELECT DISTINCT dp.codigo_erp, dp.referencia, dp.descripcion_erp
+            FROM dim_productos AS dp
+            JOIN hechos_ventas AS hv ON dp.id_producto = hv.id_producto_fk
+            WHERE hv.fecha_sk >= NOW() - INTERVAL '12 months'
 
-        # --- PASO 2: Obtener todos los productos que YA están clasificados ---
+            UNION
+
+            -- Productos con movimiento de inventario en los últimos 3 meses
+            SELECT DISTINCT dp.codigo_erp, dp.referencia, dp.descripcion_erp
+            FROM dim_productos AS dp
+            JOIN Inventario_Actual AS ia ON dp.id_producto = ia.id_producto_fk
+            WHERE ia.fecha_ultima_actualizacion >= NOW() - INTERVAL '3 months';
+        """
+        df_activos = pd.read_sql_query(query_activos, conn)
+        print(f"INFO: Se encontraron {len(df_activos)} productos únicos con actividad reciente.")
+
+        # --- El resto del script se mantiene sin cambios ---
         query_gestionados = """
             SELECT DISTINCT dp.codigo_erp, dp.referencia
             FROM gestion_productos_aux gpa
             JOIN dim_productos dp ON gpa.id_producto_fk = dp.id_producto;
         """
         df_gestionados = pd.read_sql_query(query_gestionados, conn)
-        print(f"INFO: Se encontraron {len(df_gestionados)} productos ya clasificados en 'gestion_productos_aux'.")
+        print(f"INFO: Se encontraron {len(df_gestionados)} productos ya clasificados.")
 
-        # --- PASO 3: Encontrar los productos que faltan por clasificar ---
         if df_gestionados.empty:
-            df_pendientes = df_todos
+            df_pendientes = df_activos
         else:
-            # Hacemos un "merge" para encontrar las filas de df_todos que no están en df_gestionados
             df_merged = pd.merge(
-                df_todos,
-                df_gestionados,
+                df_activos, df_gestionados,
                 on=['codigo_erp', 'referencia'],
-                how='left',
-                indicator=True
+                how='left', indicator=True
             )
             df_pendientes = df_merged[df_merged['_merge'] == 'left_only'].drop(columns=['_merge'])
 
-        # --- PASO 4: Preparar y generar el archivo CSV de salida ---
         if not df_pendientes.empty:
-            print(f"\nALERTA: Se encontraron {len(df_pendientes)} productos pendientes por clasificar.")
+            print(f"\nALERTA: Se encontraron {len(df_pendientes)} productos activos pendientes por clasificar.")
             
-            # Definimos la estructura completa de nuestro archivo CSV de gestión
-            columnas_finales_csv = [
-                'codigo_erp', 'referencia', 'categoria_gestion', 'subcategoria_1_gestion',
-                'subcategoria_2_gestion', 'descripcion_guia', 'clasificacion_py',
-                'equivalencia_py', 'peso_neto'
-            ]
-            
-            # Creamos un nuevo DataFrame para la salida
+            # (El resto del código para generar el CSV se mantiene igual)
+            columnas_finales_csv = ['codigo_erp', 'referencia', 'categoria_gestion', 'subcategoria_1_gestion','subcategoria_2_gestion', 'descripcion_guia', 'clasificacion_py','equivalencia_py', 'peso_neto']
             df_salida = pd.DataFrame()
-            
-            # Pasamos las columnas que ya tenemos
             df_salida['codigo_erp'] = df_pendientes['codigo_erp']
             df_salida['referencia'] = df_pendientes['referencia']
-            # Usamos la descripción del ERP como punto de partida para la descripción guía
             df_salida['descripcion_guia'] = df_pendientes['descripcion_erp']
-            
-            # Rellenamos las columnas de clasificación que tú debes completar
             for col in columnas_finales_csv:
                 if col not in df_salida.columns:
-                    df_salida[col] = '' # O None
-            
-            # Reordenamos las columnas para que coincidan con tu archivo maestro
+                    df_salida[col] = ''
             df_salida = df_salida[columnas_finales_csv]
-            
-            # Guardamos el archivo
-            ruta_salida = os.path.join(config.DATOS_ENTRADA_DIR, 'productos_pendientes_por_clasificar.csv')
+            ruta_salida = os.path.join(config.INFORMES_GENERADOS_DIR, 'productos_pendientes_por_clasificar.csv')
             df_salida.to_csv(ruta_salida, index=False)
-            
-            print(f"\n¡ÉXITO! Se ha generado el archivo de pendientes en:")
-            print(ruta_salida)
-            print("Por favor, abre este archivo, rellena las columnas de clasificación y luego copia las filas a tu archivo 'gestion_productos_aux.csv'.")
+            print(f"\n¡ÉXITO! Se ha generado tu 'lista de trabajo' en: {ruta_salida}")
 
         else:
-            print("\n¡EXCELENTE! No se encontraron productos nuevos pendientes de clasificación. Todo está al día.")
+            print("\n¡EXCELENTE! Todos los productos con actividad reciente están clasificados.")
 
     except Exception as e:
         print(f"ERROR CRÍTICO durante la auditoría: {e}")
