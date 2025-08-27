@@ -58,6 +58,7 @@ proyectos-gestion-comercial/
 │
 └── 01_MODELO_DATOS_Y_AUXILIARES/ # Scripts de apoyo, auditoría y sincronización.
     ├── poblar_dimensiones_catalogo.py
+    ├── auditoria_gestion_productos.py
     └── sincronizar_gestion_productos.py
 ```
 
@@ -107,8 +108,9 @@ pip install -r requirements.txt
 2.  Crea una nueva base de datos llamada `gestion_comercial`.
 3.  Abre el archivo `sql/gestion_comercial_schema.sql`, copia todo su contenido y ejecútalo en pgAdmin (o tu cliente de SQL preferido) sobre la base de datos recién creada.
 
-### 6. Ejecutar los Scripts de ETL
-Ejecuta los scripts en el siguiente orden para realizar la carga inicial de datos:
-1.  **Poblar catálogos:** `python 01_MODELO_DATOS_Y_AUXILIARES/poblar_dimensiones_catalogo.py`
-2.  **Cargar productos desde API:** `python 00_ETL_TNS/cargar_productos_api.py`
-3.  **Sincronizar gestión de productos:** `python 01_MODELO_DATOS_Y_AUXILIARES/sincronizar_gestion_productos.py`
+### 6. Flujo de Trabajo de los Scripts ETL
+El proceso de actualización de datos se realiza ejecutando los scripts en un orden lógico:
+1.  **`poblar_dimensiones_catalogo.py`:** (Ejecución única o poco frecuente, no usar delete sino truncate). Carga los catálogos base (líneas, marcas, etc.) desde los archivos CSV correspondientes en `datos_entrada/`.
+2.  **`cargar_productos_api.py`:** (Ejecución diaria/programada). Sincroniza la tabla `dim_productos` con la API de TNS, añadiendo nuevos productos y actualizando los existentes.
+3.  **`auditoria_gestion_productos.py`:** (Ejecución manual cuando se necesite). Compara `dim_productos` con `gestion_productos_aux` y genera un reporte en CSV (`productos_pendientes_por_clasificar.csv`) con los productos que necesitan ser clasificados.
+4.  **`sincronizar_gestion_productos.py`:** (Ejecución manual después de actualizar el CSV). Lee el archivo maestro `gestion_productos_aux.csv` y aplica tus clasificaciones a la base de datos.
