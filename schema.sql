@@ -133,7 +133,7 @@ CREATE TABLE Dim_Clientes_Empresa (
     id_cliente_empresa SERIAL PRIMARY KEY,
     
     -- Llave Foránea al cliente maestro. ¡Esta es la conexión clave!
-    id_maestro_cliente_fk INT NOT NULL REFERENCES Maestro_Clientes(id_maestro_cliente),
+    id_maestro_cliente_fk INT REFERENCES Maestro_Clientes(id_maestro_cliente),
     
     -- Datos específicos del cliente EN ESA EMPRESA
     cod_cliente_erp VARCHAR(50) NOT NULL,
@@ -142,6 +142,7 @@ CREATE TABLE Dim_Clientes_Empresa (
     -- Otros datos del ERP que pueden variar por empresa
     nit VARCHAR(50),
     nombre_erp VARCHAR(255),
+    cod_clasificacion_erp VARCHAR(10),
     clasificacion_erp VARCHAR(55),
     direccion_erp VARCHAR(255),
     telefono_erp VARCHAR(55),

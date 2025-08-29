@@ -184,7 +184,7 @@ COMMENT ON TABLE Maestro_Clientes IS 'Catálogo maestro con una entrada única p
 DROP TABLE IF EXISTS Dim_Clientes_Clasificacion_Historia CASCADE;
 CREATE TABLE Dim_Clientes_Clasificacion_Historia (
     id_clasificacion_historia SERIAL PRIMARY KEY,
-    id_maestro_cliente_fk INT NOT NULL REFERENCES Maestro_Clientes(id_maestro_cliente),
+    id_maestro_cliente_fk INT REFERENCES Maestro_Clientes(id_maestro_cliente),
 
     -- Tus clasificaciones de negocio que pueden cambiar con el tiempo:
     canal VARCHAR(100),
@@ -215,6 +215,7 @@ CREATE TABLE Dim_Clientes_Empresa (
     -- Otros datos del ERP que pueden variar por empresa
     nit VARCHAR(50),
     nombre_erp VARCHAR(255),
+    cod_clasificacion_erp VARCHAR(10),
     clasificacion_erp VARCHAR(55),
     direccion_erp VARCHAR(255),
     telefono_erp VARCHAR(55),
