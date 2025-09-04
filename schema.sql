@@ -394,3 +394,14 @@ CREATE TABLE Map_Producto_TQ_Categoria (
 );
 
 COMMENT ON TABLE Map_Producto_TQ_Categoria IS 'Tabla histórica que mapea un producto a su categoría TQ para un periodo de tiempo.';
+
+CREATE TABLE Api_Vendedores_Crudo (
+    cod_cliente_erp VARCHAR(50),
+    empresa_erp VARCHAR(50),
+    nit_documento VARCHAR(50),
+    nombre_vendedor VARCHAR(255),
+    fecha_carga DATE DEFAULT CURRENT_DATE,
+    PRIMARY KEY (cod_cliente_erp, empresa_erp)
+);
+
+COMMENT ON TABLE Api_Vendedores_Crudo IS 'Tabla temporal que guarda el estado diario de los vendedores según la API de TNS.';
