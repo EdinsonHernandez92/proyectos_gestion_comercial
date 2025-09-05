@@ -27,33 +27,33 @@ Este proyecto utiliza varios conceptos fundamentales para asegurar que la inform
 ```
 proyectos-gestion-comercial/
 │
-├── .env                  # (Archivo local) Credenciales y secretos.
-├── config.py             # Configuración central del proyecto.
-├── db_utils.py           # Funciones reutilizables para la base de datos.
-├── requirements.txt      # Dependencias de Python.
-├── README.md             # Este archivo.
+├── .env                  # (Archivo local) Archivo para guardar credenciales de forma segura.
+├── config.py             # Módulo de configuración central (rutas, URLs, credenciales).
+├── db_utils.py           # Funciones de utilidad para la conexión a la base de datos.
+├── requirements.txt      # Dependencias de Python para el proyecto.
+├── README.md
 │
 ├── sql/
-│   └── gestion_comercial_schema.sql # Blueprint completo de la base de datos.
+│   └── gestion_comercial_schema.sql # Script SQL para crear toda la estructura de la base de datos.
 │
 ├── datos_entrada/        # Archivos CSV para la carga y gestión manual.
 │
-├── informes_generados/   # Reportes automáticos (cambios, pendientes, etc.).
+├── informes_generados/   # Carpeta donde los scripts de auditoría guardan los reportes.
 │
-├── 00_ETL_TNS/           # Scripts principales que extraen datos de la API.
-│   ├── cargar_productos_api.py
-│   ├── cargar_clientes_api.py
-│   └── cargar_vendedores_api_crudo.py
+├── 00_ETL_TNS/           # Scripts que se conectan a la API para la carga diaria de datos crudos.
+│   ├── cargar_productos_api.py                 # Sincroniza la tabla `dim_productos`.
+│   ├── cargar_clientes_api.py                  # Sincroniza la tabla `dim_clientes_empresa`.
+│   └── cargar_vendedores_api_crudo.py          # Guarda un snapshot diario de los vendedores de la API.
 │
-└── 01_MODELO_DATOS_Y_AUXILIARES/ # Scripts de apoyo, auditoría y sincronización.
-    ├── poblar_dimensiones_catalogo.py
+└── 01_MODELO_DATOS_Y_AUXILIARES/               # Scripts de apoyo, auditoría y sincronización.
+    ├── poblar_dimensiones_catalogo.py          # Para la carga inicial de catálogos (líneas, marcas, etc.).
     │
-    ├── auditoria_gestion_productos.py
-    ├── sincronizar_gestion_productos.py
+    ├── auditoria_gestion_productos.py          # Genera un reporte de productos activos sin clasificar.
+    ├── sincronizar_gestion_productos.py        # Sincroniza el CSV de gestión de productos con la BD.
     │
-    ├── auditoria_gestion_clientes.py
-    ├── sincronizar_maestro_clientes.py
-    ├── sincronizar_clasificacion_clientes.py
+    ├── auditoria_gestion_clientes.py           # Genera un reporte de clientes activos sin gestionar.
+    ├── sincronizar_maestro_clientes.py         # Sincroniza el CSV maestro de clientes con la BD.
+    ├── sincronizar_clasificacion_clientes.py   # Sincroniza las clasificaciones históricas de clientes.
     │
     ├── sincronizar_maestro_personas.py
     └── sincronizar_roles_vendedores.py
@@ -77,21 +77,36 @@ El proyecto se divide en procesos automáticos (para datos de la API) y procesos
 Estos scripts deben ejecutarse diariamente para mantener los datos maestros sincronizados con la API.
 
 * **`cargar_productos_api.py`:**
-    * **Misión:** Sincroniza la tabla `dim_productos` con la API. Inserta productos nuevos y actualiza los existentes.
-    * **Reporte:** Genera un CSV en `informes_generados/` con los productos nuevos o modificados detectados en la API.
+    * **Misión:** Se conecta a la API, extrae la lista completa de productos para las tres empresas y la carga en la tabla `dim_productos` usando una lógica de **UPSERT** (inserta si es nuevo, actualiza si existe).
+    * **Reporte:** Antes de cargar, compara los datos de la API con los existentes en la base de datos y genera un reporte en `informes_generados/` con los productos nuevos o modificados detectados en la API.
 * **`cargar_clientes_api.py`:**
     * **Misión:** Sincroniza la tabla `dim_clientes_empresa` con la API.
     * **Reporte:** Genera un CSV en `informes_generados/` con los clientes nuevos o modificados detectados en la API.
+* **`cargar_vendedores_api_crudo.py`**
+    * **Acción:** Extrae de la API solo los terceros que son vendedores activos (código empieza con 'V' y no están inactivos) y los guarda en la tabla `api_vendedores_crudo`. Esta tabla se vacía y se recarga cada día para tener un "espejo" de la realidad de la API.
 
 ### 2. Proceso de Gestión (Manual)
-Este es tu flujo de trabajo para clasificar los datos nuevos.
+Este es el flujo de trabajo para clasificar y mantener la calidad de los datos maestros.
 
-* **Paso A: Auditoría**
-    * **`auditoria_gestion_productos.py`:** Encuentra los productos **activos y con ventas recientes** que aún no has clasificado. Genera el archivo `productos_pendientes_por_clasificar.csv`.
-    * **`auditoria_gestion_clientes.py`:** Encuentra los clientes **activos y con ventas recientes** que aún no has añadido al maestro. Genera el archivo `clientes_pendientes_por_clasificar.csv`.
-* **Paso B: Tu Acción Manual**
-    * Usando los reportes de la auditoría, actualizas tus archivos CSV maestros en la carpeta `datos_entrada/`.
-* **Paso C: Sincronización**
-    * **`sincronizar_gestion_productos.py`:** Lee tu `gestion_productos_aux.csv` y actualiza la tabla en la base de datos.
-    * **`sincronizar_maestro_clientes.py`:** Lee tu `maestro_clientes.csv` y actualiza la tabla `maestro_clientes`.
-    * **`sincronizar_clasificacion_clientes.py`:** Lee tu `dim_clientes_clasificacion_historia.csv` y actualiza las clasificaciones en la base de datos.
+#### Flujo para Productos
+1.  **Auditoría:** Ejecutas `auditoria_gestion_productos.py`. El script busca productos con ventas o inventario reciente que aún no están en tu tabla `gestion_productos_aux` y te genera el CSV `productos_pendientes_por_clasificar.csv`.
+2.  **Acción Manual:** Editas tu archivo maestro `gestion_productos_aux.csv`, añadiendo los nuevos productos y rellenando sus clasificaciones.
+3.  **Sincronización:** Ejecutas `sincronizar_gestion_productos.py`. El script lee tu CSV actualizado, busca los IDs correspondientes en `dim_productos` y sincroniza (UPSERT) la tabla `gestion_productos_aux`.
+
+#### Flujo para Clientes
+1.  **Auditoría:** Ejecutas `auditoria_gestion_clientes.py`. El script busca clientes activos en `dim_clientes_empresa` que aún no tienen un `id_maestro_cliente_fk` asignado y te genera el CSV `clientes_pendientes_por_clasificar.csv`.
+2.  **Acción Manual:** Editas tus dos archivos maestros:
+    * `maestro_clientes.csv`: Añades los nuevos clientes, asignándoles un `cod_cliente_maestro` único.
+    * `dim_clientes_clasificacion_historia.csv`: Añades las filas de clasificación para estos nuevos clientes.
+3.  **Sincronización:** Ejecutas en orden:
+    * `sincronizar_maestro_clientes.py`: Para actualizar la lista de clientes maestros.
+    * `sincronizar_clasificacion_clientes.py`: Para actualizar sus clasificaciones.
+
+#### Flujo para Vendedores
+1.  **Auditoría:** (Pendiente de creación) `auditoria_gestion_vendedores.py` comparará `api_vendedores_crudo` con tus tablas de gestión para reportar inconsistencias.
+2.  **Acción Manual:** Editas tus archivos maestros:
+    * `maestro_personas.csv`: Para añadir nuevos empleados (vendedores, supervisores).
+    * `dim_roles_comerciales_historia.csv`: Para asignar roles, supervisores y periodos de validez.
+3.  **Sincronización:** Ejecutas en orden:
+    * `sincronizar_maestro_personas.py`: Para actualizar la lista de personal.
+    * `sincronizar_roles_vendedores.py`: Para actualizar el historial de roles.
