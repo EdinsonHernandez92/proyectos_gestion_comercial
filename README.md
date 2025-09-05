@@ -42,15 +42,21 @@ proyectos-gestion-comercial/
 │
 ├── 00_ETL_TNS/           # Scripts principales que extraen datos de la API.
 │   ├── cargar_productos_api.py
-│   └── cargar_clientes_api.py
+│   ├── cargar_clientes_api.py
+│   └── cargar_vendedores_api_crudo.py
 │
 └── 01_MODELO_DATOS_Y_AUXILIARES/ # Scripts de apoyo, auditoría y sincronización.
     ├── poblar_dimensiones_catalogo.py
+    │
     ├── auditoria_gestion_productos.py
     ├── sincronizar_gestion_productos.py
+    │
     ├── auditoria_gestion_clientes.py
     ├── sincronizar_maestro_clientes.py
-    └── sincronizar_clasificacion_clientes.py
+    ├── sincronizar_clasificacion_clientes.py
+    │
+    ├── sincronizar_maestro_personas.py
+    └── sincronizar_roles_vendedores.py
 ```
 
 ---
@@ -68,7 +74,7 @@ proyectos-gestion-comercial/
 El proyecto se divide en procesos automáticos (para datos de la API) y procesos manuales (para tus datos de gestión).
 
 ### 1. Proceso Diario (Automático)
-Estos scripts deben ejecutarse diariamente para mantener los datos maestros sincronizados.
+Estos scripts deben ejecutarse diariamente para mantener los datos maestros sincronizados con la API.
 
 * **`cargar_productos_api.py`:**
     * **Misión:** Sincroniza la tabla `dim_productos` con la API. Inserta productos nuevos y actualiza los existentes.
