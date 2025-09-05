@@ -53,7 +53,7 @@ def sincronizar_vendedores_api():
         # --- PASO 2: Filtrar para quedarnos solo con los vendedores ---
         # Aplicamos los filtros que definiste
         df_vendedores = df_consolidado[
-            (df_consolidado['OINACTIVO'].fillna('1') != '0') &
+            (df_consolidado['OINACTIVO'] == '0') &
             (df_consolidado['OCODIGO'].str.startswith('V', na=False))
         ].copy()
         
