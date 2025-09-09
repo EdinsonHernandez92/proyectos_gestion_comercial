@@ -43,7 +43,8 @@ proyectos-gestion-comercial/
 ├── 00_ETL_TNS/           # Scripts que se conectan a la API para la carga diaria de datos crudos.
 │   ├── cargar_productos_api.py                 # Sincroniza la tabla `dim_productos`.
 │   ├── cargar_clientes_api.py                  # Sincroniza la tabla `dim_clientes_empresa`.
-│   └── cargar_vendedores_api_crudo.py          # Guarda un snapshot diario de los vendedores de la API.
+│   ├── cargar_vendedores_api_crudo.py          # Guarda un snapshot diario de los vendedores de la API.
+│   └── cargar_inventario_api.py                # Sincroniza la tabla `inventario_actual`.
 │
 └── 01_MODELO_DATOS_Y_AUXILIARES/               # Scripts de apoyo, auditoría y sincronización.
     ├── poblar_dimensiones_catalogo.py          # Para la carga inicial de catálogos (líneas, marcas, etc.).
@@ -55,8 +56,10 @@ proyectos-gestion-comercial/
     ├── sincronizar_maestro_clientes.py         # Sincroniza el CSV maestro de clientes con la BD.
     ├── sincronizar_clasificacion_clientes.py   # Sincroniza las clasificaciones históricas de clientes.
     │
-    ├── sincronizar_maestro_personas.py
-    └── sincronizar_roles_vendedores.py
+    ├── sincronizar_maestro_personas.py         # Sincroniza el CSV maestro de personas con la BD.
+    ├── sincronizar_roles_vendedores.py         # Sincroniza el CSV roles comerciales histórico con la BD.
+    │
+    └── generar_snapshot_inventario.py          # Consume la información del inventario actual para agregar al histórico de inventarios.
 ```
 
 ---
@@ -110,3 +113,15 @@ Este es el flujo de trabajo para clasificar y mantener la calidad de los datos m
 3.  **Sincronización:** Ejecutas en orden:
     * `sincronizar_maestro_personas.py`: Para actualizar la lista de personal.
     * `sincronizar_roles_vendedores.py`: Para actualizar el historial de roles.
+
+#### Flujo para Inventario
+
+Este flujo mantiene actualizadas las tablas de existencias.
+
+1.  **`cargar_inventario_api.py` (Diario/Programado):**
+    * **Misión:** Se conecta al endpoint de la API que contiene los productos, "aplana" la información anidada de las bodegas y aplica los filtros de negocio (bodegas permitidas, lista de precios).
+    * **Acción:** Actualiza la tabla `Inventario_Actual` con las existencias más recientes para cada producto en cada bodega, usando una lógica de **UPSERT**.
+
+2.  **`generar_snapshot_inventario.py` (Periódico, ej. mensual):**
+    * **Misión:** Crea un registro histórico del inventario.
+    * **Acción:** Toma una "foto" de todo el contenido de la tabla `Inventario_Actual` y la inserta en la tabla `Hechos_Inventario` con la fecha del día en que se ejecuta. Esto permite el análisis de tendencias de inventario a lo largo del tiempo.    
