@@ -27,7 +27,9 @@ API_CONFIG_TNS = [
         "usuario_tns": os.getenv("TNS_API_USER_CAMDUN"),
         "password_tns": os.getenv("TNS_API_PASS_CAMDUN"),
         "tnsapitoken": os.getenv("TNS_API_TOKEN_CAMDUN"),
-        "cod_sucursal_tns": "00"
+        "cod_sucursal_tns": "00",
+        "bodegas_permitidas": ["00", "06", "09", "11"],
+        "lista_precio_permitida": "1"
     },
     {
         "nombre_corto": "GMD",
@@ -35,7 +37,9 @@ API_CONFIG_TNS = [
         "usuario_tns": os.getenv("TNS_API_USER_GLOBAL"),
         "password_tns": os.getenv("TNS_API_PASS_GLOBAL"),
         "tnsapitoken": os.getenv("TNS_API_TOKEN_GLOBAL"),
-        "cod_sucursal_tns": "00"
+        "cod_sucursal_tns": "00",
+        "bodegas_permitidas": ["00", "06"],
+        "lista_precio_permitida": "1"        
     },
     {
         "nombre_corto": "PY",
@@ -43,7 +47,9 @@ API_CONFIG_TNS = [
         "usuario_tns": os.getenv("TNS_API_USER_YERMAN"),
         "password_tns": os.getenv("TNS_API_PASS_YERMAN"),
         "tnsapitoken": os.getenv("TNS_API_TOKEN_YERMAN"),
-        "cod_sucursal_tns": "00"
+        "cod_sucursal_tns": "00",
+        "bodegas_permitidas": ["03"],
+        "lista_precio_permitida": None # No aplica para la fábrica, lo ponemos como None
     }
 ]
 
