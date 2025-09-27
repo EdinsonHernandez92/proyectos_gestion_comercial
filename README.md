@@ -1,24 +1,42 @@
 # Proyecto de ETL y Data Warehouse para Gestión Comercial 📊
 
-Este proyecto implementa un proceso completo de **ETL (Extracción, Transformación y Carga)** para centralizar, limpiar y estructurar los datos comerciales de tres empresas distintas (dos distribuidoras y una fábrica). El objetivo final es crear un **Data Warehouse** robusto en PostgreSQL que sirva como una única fuente de verdad para el análisis de negocio, la generación de informes y el cálculo de comisiones.
+Este proyecto implementa un proceso completo de **ETL (Extracción, Transformación y Carga)** para centralizar y estructurar los datos comerciales de tres empresas distintas. El objetivo es crear un **Data Warehouse** robusto en PostgreSQL que sirva como una única fuente de verdad para el análisis de negocio, la generación de informes y el cálculo de comisiones.
 
 ---
-## Arquitectura de la Solución 🏗️
+## Arquitectura y Metodologías Clave 🧠
 
 La solución está diseñada siguiendo las mejores prácticas de la ingeniería de datos:
 
-1.  **Extracción:** Scripts de Python se conectan a una API de TNS para extraer datos crudos de productos y clientes.
+1.  **Extracción:** Scripts de Python se conectan a una API de TNS para extraer datos crudos de productos, clientes y vendedores.
 2.  **Transformación:** Los datos extraídos pasan por una capa de limpieza, estandarización y enriquecimiento. Se aplican reglas de negocio para corregir inconsistencias.
 3.  **Carga:** Los datos limpios se cargan en una base de datos PostgreSQL, diseñada con un **Esquema en Estrella**.
 4.  **Gestión y Auditoría:** Un conjunto de scripts de apoyo permite la gestión manual de clasificaciones de negocio y genera reportes para mantener la calidad de los datos.
 
----
-## Conceptos Clave de Modelado de Datos 💡
+###Metodologías Clave de Modelado de Datos 💡
+
+La solución se basa en principios sólidos de ingeniería de datos para garantizar la integridad, eficiencia y escalabilidad del sistema.
+
+### Esquema en Estrella (Star Schema)
+Es el pilar de nuestro diseño. Consiste en separar los datos en dos tipos de tablas:
+
+* **Tablas de Hechos (Fact Tables):** Almacenan las mediciones numéricas de los procesos de negocio. Son el centro de nuestro análisis y suelen ser las tablas más grandes.
+    * **`hechos_ventas`:** Es la tabla principal del modelo. Cada fila representa una línea de detalle de una factura (un producto vendido a un cliente en un momento dado). Contiene métricas como `cantidad`, `valor_total`, `costo_total`, etc., y se conecta con todas las dimensiones (productos, clientes, vendedores, tiempo, bodegas).
+    * **`hechos_inventario`:** Guarda "fotos" periódicas (snapshots) del inventario, idealmente a fin de mes. Su propósito es permitir el análisis de la evolución y tendencias de las existencias a lo largo del tiempo.
+    * **`inventario_actual`:** Es una tabla de hechos especial que no guarda historial, sino que refleja el estado *actual* del inventario. Se actualiza cada día para consultas operativas rápidas sobre las existencias disponibles.
+
+* **Tablas de Dimensión (Dimension Tables):** Contienen el contexto descriptivo ("quién, qué, cuándo, dónde") para los hechos. Son las tablas que usamos para filtrar y agrupar los datos en los reportes. Ejemplos: `dim_productos`, `maestro_clientes`, `dim_tiempo`, `dim_bodegas`.
+
+### Dimensiones de Lenta Variación (SCD)
+Los atributos de negocio cambian con el tiempo. Para manejar estos cambios sin perder el historial, implementamos la metodología **SCD Tipo 2**. En lugar de sobrescribir un registro, "cerramos" el antiguo con una `fecha_fin_validez` y creamos uno nuevo con una nueva `fecha_inicio_validez`. Esto nos permite reconstruir la historia con total precisión, como en el caso de la tabla `dim_roles_comerciales_historia`.
+
+### Dimensiones Conformes
+Son dimensiones que se comparten entre múltiples tablas de hechos. En nuestro caso, `Dim_Bodegas` es una dimensión conforme, ya que se utiliza tanto en `Hechos_Inventario` como en `Hechos_Ventas`. Esto asegura consistencia y permite realizar análisis cruzados entre diferentes procesos de negocio.
+
+### Procesos Idempotentes
+Nuestros scripts de carga y sincronización están diseñados para ser **idempotentes**. Esto significa que se pueden ejecutar múltiples veces con los mismos datos de entrada y el resultado final en la base de datos será el mismo, sin generar duplicados ni errores. Esto se logra mediante el uso de comandos `INSERT ... ON CONFLICT DO UPDATE` (UPSERT) o estrategias de `TRUNCATE` y recarga.
 
 Este proyecto utiliza varios conceptos fundamentales para asegurar que la información sea íntegra y eficiente.
 
-* **Esquema en Estrella (Star Schema):** Separa los datos en **Tablas de Hechos** (métricas, números) y **Tablas de Dimensión** (contexto descriptivo).
-* **Dimensiones de Lenta Variación (SCD) Tipo 2:** En lugar de sobrescribir datos que cambian con el tiempo, se crean nuevos registros con un período de validez. Esto nos permite mantener un historial completo (ej. para clasificaciones de clientes o roles de vendedores).
 * **Llaves Sustitutas vs. de Negocio:** Usamos IDs numéricos internos (`id_producto`) para la eficiencia de la base de datos (Llave Sustituta) y mantenemos los códigos del mundo real (`codigo_erp`) para el análisis y la lógica de negocio (Llave de Negocio).
 
 ---
@@ -27,7 +45,7 @@ Este proyecto utiliza varios conceptos fundamentales para asegurar que la inform
 ```
 proyectos-gestion-comercial/
 │
-├── .env                  # (Archivo local) Archivo para guardar credenciales de forma segura.
+├── .env                  # (Local) Archivo para guardar credenciales de forma segura.
 ├── config.py             # Módulo de configuración central (rutas, URLs, credenciales).
 ├── db_utils.py           # Funciones de utilidad para la conexión a la base de datos.
 ├── requirements.txt      # Dependencias de Python para el proyecto.
@@ -44,10 +62,13 @@ proyectos-gestion-comercial/
 │   ├── cargar_productos_api.py                 # Sincroniza la tabla `dim_productos`.
 │   ├── cargar_clientes_api.py                  # Sincroniza la tabla `dim_clientes_empresa`.
 │   ├── cargar_vendedores_api_crudo.py          # Guarda un snapshot diario de los vendedores de la API.
-│   └── cargar_inventario_api.py                # Sincroniza la tabla `inventario_actual`.
+│   ├── cargar_inventario_api.py                # Sincroniza la tabla `inventario_actual`.
+│   └── cargar_ventas_api.py                    # Sincroniza y actualiza la tabla de hechos_ventas.
 │
 └── 01_MODELO_DATOS_Y_AUXILIARES/               # Scripts de apoyo, auditoría y sincronización.
     ├── poblar_dimensiones_catalogo.py          # Para la carga inicial de catálogos (líneas, marcas, etc.).
+    │
+    ├── poblar_dim_tiempo.py                    # Script que pobla la tabla de dimensión de tiempo.
     │
     ├── auditoria_gestion_productos.py          # Genera un reporte de productos activos sin clasificar.
     ├── sincronizar_gestion_productos.py        # Sincroniza el CSV de gestión de productos con la BD.
@@ -56,6 +77,7 @@ proyectos-gestion-comercial/
     ├── sincronizar_maestro_clientes.py         # Sincroniza el CSV maestro de clientes con la BD.
     ├── sincronizar_clasificacion_clientes.py   # Sincroniza las clasificaciones históricas de clientes.
     │
+    ├── auditoria_gestion_vendedores.py         # Genera un reporte de vendedores activos sin gestionar.
     ├── sincronizar_maestro_personas.py         # Sincroniza el CSV maestro de personas con la BD.
     ├── sincronizar_roles_vendedores.py         # Sincroniza el CSV roles comerciales histórico con la BD.
     │
@@ -87,8 +109,10 @@ Estos scripts deben ejecutarse diariamente para mantener los datos maestros sinc
     * **Reporte:** Genera un CSV en `informes_generados/` con los clientes nuevos o modificados detectados en la API.
 * **`cargar_vendedores_api_crudo.py`**
     * **Acción:** Extrae de la API solo los terceros que son vendedores activos (código empieza con 'V' y no están inactivos) y los guarda en la tabla `api_vendedores_crudo`. Esta tabla se vacía y se recarga cada día para tener un "espejo" de la realidad de la API.
+* **`cargar_inventario_api.py`:** Actualiza la tabla `Inventario_Actual` con las existencias del día.
+* **`cargar_ventas_api.py`:** Carga las transacciones de ventas del día en la tabla `hechos_ventas`.
 
-### 2. Proceso de Gestión (Manual)
+### 2. Proceso de Gestión (Manual) - Clasificación y Calidad
 Este es el flujo de trabajo para clasificar y mantener la calidad de los datos maestros.
 
 #### Flujo para Productos
@@ -124,4 +148,4 @@ Este flujo mantiene actualizadas las tablas de existencias.
 
 2.  **`generar_snapshot_inventario.py` (Periódico, ej. mensual):**
     * **Misión:** Crea un registro histórico del inventario.
-    * **Acción:** Toma una "foto" de todo el contenido de la tabla `Inventario_Actual` y la inserta en la tabla `Hechos_Inventario` con la fecha del día en que se ejecuta. Esto permite el análisis de tendencias de inventario a lo largo del tiempo.    
+    * **Acción:** Toma una "foto" de todo el contenido de la tabla `Inventario_Actual` y la inserta en la tabla `Hechos_Inventario` con la fecha del día en que se ejecuta. Esto permite el análisis de tendencias de inventario a lo largo del tiempo.
