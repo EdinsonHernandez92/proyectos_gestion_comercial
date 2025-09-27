@@ -1,3 +1,13 @@
+--CREATE DATABASE gestion_comercial
+--    WITH
+--    OWNER = postgres
+--    TEMPLATE = template0  -- <-- ESTA ES LA LÍNEA CLAVE
+--    ENCODING = 'UTF8'
+--    LC_COLLATE = 'es_CO.UTF-8'
+--    LC_CTYPE = 'es_CO.UTF-8'
+--    LOCALE_PROVIDER = 'libc'
+--    CONNECTION LIMIT = -1;
+
 DROP TABLE IF EXISTS Dim_Lineas CASCADE;
 CREATE TABLE Dim_Lineas (
     id_linea SERIAL PRIMARY KEY,
@@ -70,6 +80,7 @@ CREATE TABLE Dim_Tiempo (
     nombre_dia VARCHAR(20) NOT NULL,
     es_fin_de_semana BOOLEAN NOT NULL,
     es_dia_habil BOOLEAN NOT NULL,
+    es_festivo BOOLEAN,
     dia_habil_del_mes INT,
     total_dias_habiles_mes INT
 );
@@ -345,10 +356,12 @@ CREATE TABLE Hechos_Ventas (
     id_transaccion_erp BIGINT, -- Tu 'id_erp'
     numero_factura_erp VARCHAR(50) NOT NULL,
     forma_pago_erp VARCHAR(10),
+    id_bodega_fk INT,
     bodega_erp VARCHAR(20),
     lista_precio_erp VARCHAR(20),
     observaciones_erp VARCHAR(255),
-    motivo_devolucion_erp VARCHAR(255)
+    motivo_devolucion_erp VARCHAR(255),
+    pedido_tiendapp VARCHAR(20)
 );
 
 COMMENT ON TABLE Hechos_Ventas IS 'Tabla de hechos central que registra cada línea de venta. Conecta todas las dimensiones y contiene las medidas de negocio.';
