@@ -319,9 +319,6 @@ CREATE TABLE Gestion_Productos_Aux (
     -- COLUMNAS sr_tat, sr_mm, sr_ssm ELIMINADAS.
     -- Esta lógica ahora se gestiona a través del sistema de Acuerdos_Comerciales
     -- para mayor flexibilidad y precisión histórica.
-
-    -- Llave foránea a la dimensión de marca que tú gestionas
-    id_marca_fk INT REFERENCES Dim_Marcas(id_marca)
 );
 COMMENT ON TABLE Gestion_Productos_Aux IS 'Contiene las clasificaciones y atributos de negocio gestionados manualmente. Enriquece la data de Dim_Productos.';
 
