@@ -97,6 +97,7 @@ CREATE TABLE Dim_Productos (
     cod_grupo_erp VARCHAR(50),
     cod_linea_erp VARCHAR(50),
     cod_dpto_sku_erp VARCHAR(50),
+    cod_marca_erp VARCHAR(50),
     peso_bruto_erp NUMERIC(10, 4),
     factor_erp NUMERIC(10, 3),
     porcentaje_iva NUMERIC,
