@@ -160,6 +160,13 @@ def transformar_productos(df_crudo, mapeos):
     df['cod_grupo_erp'] = df['codigo_erp'].map(mapeos['grupos']).fillna(df['cod_grupo_erp'])
     df['cod_dpto_sku_erp'] = df['codigo_erp'].map(mapeos['dptos']).fillna(df['cod_dpto_sku_erp'])
 
+    # Creamos una llave compuesta para buscar en el mapa de marcas
+    df['llave_marca'] = df['nombre_marca_erp'].fillna('') + '|' + df['empresa_erp'].fillna('')
+    # Usamos el mapa para rellenar la nueva columna cod_marca_erp
+    df['cod_marca_erp'] = df['llave_marca'].map(mapeos['marcas'])
+    # Eliminamos la columna auxiliar que ya no necesitamos
+    df.drop(columns=['llave_marca'], inplace=True)
+
     print("INFO: Transformación completada.")
     return df
 
@@ -178,14 +185,14 @@ def cargar_productos_db(df_limpio, conn):
             # Columnas en el orden exacto de la tabla dim_productos
             columnas_db = [
                 'codigo_erp', 'referencia', 'empresa_erp', 'descripcion_erp', 'cod_grupo_erp', 
-                'cod_linea_erp', 'cod_dpto_sku_erp', 'peso_bruto_erp', 'factor_erp', 
+                'cod_linea_erp', 'cod_dpto_sku_erp', 'cod_marca_erp', 'peso_bruto_erp', 'factor_erp', 
                 'porcentaje_iva', 'costo_promedio_erp', 'costo_ult_erp'
             ]
             
             # Columnas que se deben actualizar si el producto ya existe
             columnas_update = [
                 'descripcion_erp', 'cod_grupo_erp', 'cod_linea_erp', 'cod_dpto_sku_erp',
-                'costo_promedio_erp', 'costo_ult_erp'
+                'cod_marca_erp', 'costo_promedio_erp', 'costo_ult_erp'
             ]
             
             # Preparamos el string para la sección SET del UPDATE
@@ -214,7 +221,10 @@ def cargar_productos_db(df_limpio, conn):
             print(f"ERROR CRÍTICO durante la carga a la base de datos: {e}")
             conn.rollback() # Revertimos la transacción en caso de error
 
-if __name__ == '__main__':
+def ejecutar_etl_productos():
+    """
+    Función principal que orquesta el proceso completo de ETL para productos.
+    """
     print("=== INICIO DEL PROCESO ETL DE PRODUCTOS ===")
     mapeos = leer_mapeos()
     if mapeos:
@@ -229,3 +239,8 @@ if __name__ == '__main__':
                     conn.close()
                     print("\nINFO: Conexión a la base de datos cerrada.")
     print("\n=== FIN DEL PROCESO ETL DE PRODUCTOS ===")
+
+# Este bloque ahora solo tiene una tarea: llamar a la función principal.
+# Esto permite que el script se pueda ejecutar directamente Y que se pueda importar desde main.py
+if __name__ == '__main__':
+    ejecutar_etl_productos()
