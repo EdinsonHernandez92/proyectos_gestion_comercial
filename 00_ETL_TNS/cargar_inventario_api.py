@@ -125,10 +125,10 @@ def cargar_inventario_db(df_inventario, conn):
         print(f"ERROR CRÍTICO durante la carga de inventario: {e}")
         conn.rollback()
 
-if __name__ == '__main__':
+def ejecutar_etl_inventario():
     print("=== INICIO DEL PROCESO ETL DE INVENTARIO ===")
     df_inventario = extraer_y_transformar_inventario()
-    
+
     if df_inventario is not None and not df_inventario.empty:
         conn = get_db_connection()
         if conn:
@@ -137,3 +137,6 @@ if __name__ == '__main__':
             finally:
                 conn.close()
     print("\n=== FIN DEL PROCESO ETL DE INVENTARIO ===")
+
+if __name__ == '__main__':
+    ejecutar_etl_inventario()
