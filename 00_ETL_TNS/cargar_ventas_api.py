@@ -193,19 +193,19 @@ def cargar_ventas_db(df_enriquecido, fecha_desde, fecha_hasta, conn):
         print(f"ERROR CRÍTICO durante la carga de ventas: {e}")
         conn.rollback() # Revertimos cualquier cambio si hay un error
 
-if __name__ == '__main__':
-    print("=== INICIO DEL PROCESO ETL DE VENTAS ===")
-    
+def ejecutar_etl_ventas():
+    print("=== INICIO DEL PROCESO ETL DE VENTAS")
+
     # Por defecto, el script buscará las ventas desde ayer hasta hoy
     fecha_fin = date.today()
     fecha_inicio = fecha_fin - timedelta(days=1)
     fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
     fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
-    
+
     # --- Orquestación del Proceso ---
     # 1. Extraer
     df_ventas_crudo = extraer_ventas_api(fecha_inicio_str, fecha_fin_str)
-    
+
     # 2. Transformar y Cargar (solo si la extracción fue exitosa)
     if df_ventas_crudo is not None and not df_ventas_crudo.empty:
         conn = get_db_connection()
@@ -214,5 +214,8 @@ if __name__ == '__main__':
                 df_ventas_enriquecido = transformar_y_enriquecer_ventas(df_ventas_crudo, conn)
                 cargar_ventas_db(df_ventas_enriquecido, fecha_inicio_str, fecha_fin_str, conn)
             finally:
-                conn.close() # Aseguramos que la conexión se cierre siempre
+                conn.close()
     print("\n=== FIN DEL PROCESO ETL DE VENTAS ===")
+
+if __name__ == '__main__':
+    ejecutar_etl_ventas()
