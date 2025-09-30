@@ -121,11 +121,14 @@ def cargar_dim_clientes_empresa(df_crudo, conn):
         print(f"ERROR CRÍTICO durante la carga a dim_clientes_empresa: {e}")
         conn.rollback()
 
-if __name__ == '__main__':
+def ejecutar_etl_clientes():
+    """
+    Función principal orquesta el proceso completo de ETL para clientes.
+    """
     print("=== INICIO DEL PROCESO ETL DE CLIENTES (API -> dim_clientes_empresa) ===")
-    
+
     df_clientes_crudo = extraer_clientes_api()
-    
+
     if df_clientes_crudo is not None:
         conn = get_db_connection()
         if conn:
@@ -135,5 +138,8 @@ if __name__ == '__main__':
             finally:
                 conn.close()
                 print("\nINFO: Conexión a la base de datos cerrada.")
-
+    
     print("\n=== FIN DEL PROCESO ETL DE CLIENTES ===")
+
+if __name__ == '__main__':
+    ejecutar_etl_clientes()
