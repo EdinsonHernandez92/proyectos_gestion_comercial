@@ -149,3 +149,26 @@ Este flujo mantiene actualizadas las tablas de existencias.
 2.  **`generar_snapshot_inventario.py` (Periódico, ej. mensual):**
     * **Misión:** Crea un registro histórico del inventario.
     * **Acción:** Toma una "foto" de todo el contenido de la tabla `Inventario_Actual` y la inserta en la tabla `Hechos_Inventario` con la fecha del día en que se ejecuta. Esto permite el análisis de tendencias de inventario a lo largo del tiempo.
+
+## Flujo de Trabajo con el Orquestador 🚀
+
+Todo el proyecto está diseñado para ser controlado desde el script principal `main.py`, que presenta un menú interactivo para ejecutar los diferentes procesos.
+
+### **Paso 1: Instalación (Solo la primera vez)**
+1.  **Clonar el Repositorio:** `git clone https://github.com/EdinsonHernandez92/proyectos_gestion_comercial.git`
+2.  **Configurar Entorno:** Crea tu entorno virtual y el archivo `.env` con las credenciales.
+3.  **Instalar Dependencias:** `pip install -r requirements.txt`
+4.  **Crear Base de Datos:** Crea la base de datos `gestion_comercial` con `ENCODING = 'UTF8'` y ejecuta el script `sql/gestion_comercial_schema.sql`.
+5.  **Carga Inicial de Catálogos:** Ejecuta `python 01_MODELO_DATOS_Y_AUXILIARES/poblar_dimensiones_catalogo.py` y `poblar_dim_tiempo.py` una única vez.
+
+### **Paso 2: Proceso Diario**
+1.  **Ejecuta el Orquestador:** Desde la raíz del proyecto, corre el comando:
+    ```bash
+    python main.py
+    ```
+2.  **Opción 1 (Recolectar y Auditar):** Selecciona la **Opción 1** en el menú. El script ejecutará automáticamente todas las cargas desde la API y luego las auditorías, dejándote los reportes de "pendientes" en la carpeta `informes_generados/`.
+3.  **Acción Manual:** Revisa los reportes y actualiza tus archivos CSV en la carpeta `datos_entrada/`.
+4.  **Opción 2 (Sincronizar):** Vuelve al menú del orquestador y selecciona la **Opción 2**. El script ejecutará todas las sincronizaciones para aplicar tus cambios manuales a la base de datos.
+
+### **Paso 3: Tareas Ocasionales**
+* Para tareas que no son diarias, como generar un snapshot de inventario o recargar los catálogos base, selecciona la **Opción 3** en el menú principal.    
